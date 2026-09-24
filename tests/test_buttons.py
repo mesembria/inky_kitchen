@@ -72,3 +72,27 @@ def test_gpio_release_bounce_does_not_double_fire():
     g._edge("A", pressed=True, at_s=10.21)     # contact bounce
     g._edge("A", pressed=False, at_s=10.22)
     assert q.qsize() == 1
+
+
+def test_gpio_press_bounce_does_not_double_fire():
+    # Review finding: bounce on the *press* edge emitted a phantom short press,
+    # then the real release (>200ms later) emitted a second — two 25s flashes.
+    q = queue.Queue()
+    g = buttons.GpioButtons(q, CFG)
+    g._edge("B", pressed=True, at_s=10.000)
+    g._edge("B", pressed=False, at_s=10.001)   # contact bounce
+    g._edge("B", pressed=True, at_s=10.002)
+    g._edge("B", pressed=False, at_s=10.400)   # the real release
+    assert q.qsize() == 1
+    assert q.get_nowait() == events.ButtonPressed("B", long=False)
+
+
+def test_gpio_long_press_with_press_bounce_stays_one_long_press():
+    q = queue.Queue()
+    g = buttons.GpioButtons(q, CFG)
+    g._edge("D", pressed=True, at_s=10.000)
+    g._edge("D", pressed=False, at_s=10.001)
+    g._edge("D", pressed=True, at_s=10.002)
+    g._edge("D", pressed=False, at_s=12.600)
+    assert q.qsize() == 1
+    assert q.get_nowait() == events.ButtonPressed("D", long=True)

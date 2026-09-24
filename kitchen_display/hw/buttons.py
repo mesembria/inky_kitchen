@@ -4,7 +4,6 @@ The logic worth testing — debounce and short/long classification — is pure a
 lives here; the GPIO wiring is a thin shell around it.
 """
 import logging
-import time
 
 from .. import events
 
@@ -12,6 +11,12 @@ log = logging.getLogger(__name__)
 
 # Inky Impression 7.3" rear buttons, active-low.
 PINS = {"A": 5, "B": 6, "C": 16, "D": 24}
+
+# Contact bounce: any edge within this long of the previous edge on the same
+# line is noise. Kept well under a quick human tap (~80-150ms) so a tap's
+# release is never swallowed; the configured debounce_s separately spaces out
+# accepted presses.
+BOUNCE_S = 0.03
 
 
 def classify(press_s, cfg):
@@ -42,6 +47,7 @@ class GpioButtons:
         self.cfg = cfg
         self.debouncer = Debouncer(cfg)
         self._down_at = {}
+        self._last_edge = {}
 
     def start(self):
         import gpiod
@@ -63,10 +69,14 @@ class GpioButtons:
                 if name is None:
                     continue
                 self._edge(name, event.event_type == gpiod.EdgeEvent.Type.FALLING_EDGE,
-                           time.monotonic())
+                           event.timestamp_ns / 1e9)
 
     def _edge(self, name, pressed, at_s):
         """Falling edge = button down (active-low); rising edge = released."""
+        last = self._last_edge.get(name)
+        self._last_edge[name] = at_s
+        if last is not None and at_s - last < BOUNCE_S:
+            return                                  # contact bounce
         if pressed:
             self._down_at[name] = at_s
             return
