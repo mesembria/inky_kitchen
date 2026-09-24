@@ -1,10 +1,15 @@
-# Inky Impression Weather Display
+# Kitchen Display
 
-Raspberry Pi + Pimoroni Inky Impression 7.3" weather display. Renders an advice
-card banner (what-to-wear, rain, storms, overnight, etc.) overlaid on a full-width
-ensemble temperature graph. Fetches deterministic forecasts and condition icons
-from Google Weather API, plus ensemble spread confidence, wind gusts, sunrise/sunset,
-and US Air Quality Index from Open-Meteo (no API key required). Refreshes hourly via cron.
+A wall dashboard for the kitchen on a Pimoroni Inky Impression 7.3". The resting
+view shows the weather now and for the next few hours, the family's week, and
+what's for dinner. The rear buttons switch views. It refreshes hourly, holds the
+refresh while someone is in the room (once the presence sensor lands), and never
+shows a blank or silently wrong panel: a failed fetch re-shows the last good image
+marked STALE.
+
+Forked from the Inky Impression weather display, which lives on here as the
+weather view (`inky_weather/`, unchanged). Design and plans are in
+`docs/superpowers/`.
 
 ## Hardware
 - Raspberry Pi (Pi 4 for dev, Pi Zero 2W recommended for the final install — needs a pre-soldered header)
@@ -34,49 +39,72 @@ and US Air Quality Index from Open-Meteo (no API key required). Refreshes hourly
    # edit config.py: google_weather_key, lat, long, location_name
    ```
 
-## Test
-- Offline render to PNG (no display needed):
-  ```bash
-  python3 -m inky_weather.main --fixture --out test.png
-  ```
-- Live fetch to the display:
-  ```bash
-  python3 -m inky_weather.main
-  ```
+## Configuration
 
-## Schedule (hourly refresh)
+- `inky_weather/config.py` — Google Weather key, lat/long, location name
+  (copy from `inky_weather/config.example.py`).
+- `kitchen_display/config.py` — optional; overrides the refresh timings in
+  `kitchen_display/config_example.py`.
 
-The Pi runs via `run.sh`, a wrapper that self-updates the checkout from
-`origin/main` before each run, then renders. Make it executable once:
+Both are gitignored.
+
+## Run it
+
+Development, on a Mac:
+
 ```bash
-chmod +x run.sh
+python3 -m venv .venv && source .venv/bin/activate
+pip install Pillow requests pytest        # NOT inky — it needs Pi-only GPIO libs
+python3 -m pytest -q
+python3 -m kitchen_display --fixture --view glance --out glance.png
+python3 tools/panel_sim.py glance.png panel_sim.png   # review THIS one
 ```
-Add to crontab (`crontab -e`). `cron` sets `$HOME` to the crontab owner's home,
-so `$HOME` keeps this correct whatever your username is — substitute a literal
-absolute path only if you keep the repo elsewhere:
+
+`--view` takes `glance`, `weather`, or `nextweek`. Drive the whole loop without
+hardware — `a/b/c/d` are short presses, `A/B/C/D` long ones:
+
+```bash
+python3 -m kitchen_display --fixture --simulate -v
 ```
-0 * * * * $HOME/inky_weather_odin/run.sh >> $HOME/weather.log 2>&1
+
+On the Pi, systemd runs the daemon and `run.sh` self-updates on every start:
+
+```bash
+cp kitchen-display.service ~/.config/systemd/user/
+systemctl --user enable --now kitchen-display
+sudo loginctl enable-linger $USER
 ```
-The log path must be one the cron user can write. Pointing it at another user's
-home (e.g. a hard-coded `/home/pi/...` when you run as a different user) makes the
-shell fail to open the redirect, and the job never runs — the panel just goes
-stale with nothing in the log.
+
+Logs go to `~/kitchen_display.log`, one line per render.
+
+Code updates land on the next restart — the daily 04:00 exit, a long press on
+button D, or `systemctl --user restart kitchen-display`. The version string in
+the panel header is how you confirm an update landed.
 
 ### Auto-update
 
-Each run, `run.sh`:
+Each start, `run.sh`:
 1. `git fetch` + `git reset --hard origin/main` — the Pi always matches the latest
-   `main`. Your `config.py`, history, and cached image are gitignored, so the reset
-   never touches them.
+   `main`. Config files and the cached image are gitignored, so the reset never
+   touches them.
 2. Reinstalls dependencies only if `requirements.txt` changed in that update.
 3. If the network is down (fetch fails), it skips the update and runs the code
    already on disk — the display never goes dark over a failed pull.
 
-It logs one line per run to `weather.log`, e.g
-`… update: weather abc1234 -> def5678 (updated)` or `… (up to date)`.
+A commit that starts and then crashes is retried 5 times in 10 minutes, then
+systemd stops trying; the panel keeps its last image. Fix it over SSH, then
+`systemctl --user reset-failed kitchen-display`.
 
-Caveat: if a push changes `run.sh` itself, the new wrapper takes effect on the
-*next* run (bash has already read the running copy).
+## Buttons
+
+| Button | Short press | Long press (2s) |
+|---|---|---|
+| A | Glance — back home | Next week's agenda |
+| B | Weather view | *(historical weather, later)* |
+| C | — | — |
+| D | Redraw now | Pull and restart |
+
+The glance is the resting view; a scheduled refresh always returns to it.
 
 ### Versioning
 
@@ -89,18 +117,7 @@ git tag v1.0.0 && git push --tags
 After that the panel and log show `v1.0.0` (or e.g. `v1.0.0-3-gabc1234` three
 commits later).
 
-## Development (on a Mac)
-Use a virtualenv (Homebrew/system Python blocks global `pip install` under
-PEP 668 — the `externally-managed-environment` error):
-```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install Pillow requests pytest      # NOT inky — it needs Pi-only GPIO libs
-python3 -m pytest -v
-python3 -m inky_weather.main --fixture --out fixture.out.png
-```
-The `inky` library is only needed on the Pi; it is imported lazily so tests and
-`--out` rendering work without it. On the Pi, install everything with
-`pip install -r requirements.txt` inside the venv (see Setup above).
+## Designing for the panel
 
 ### The PNG lies: design against the 7-colour palette
 
@@ -120,23 +137,17 @@ Rules for anything you draw:
   `render.py`, which draws one pixel every three so a full-ink rule reads light.
 - **Check any new colour constant against the palette** before using it. Add it to
   the guard in `test_gridlines_survive_seven_color_quantization`
-  (`tests/test_smoke.py`) so a non-surviving colour fails the suite rather than
-  shipping to the panel.
+  (`tests/test_smoke.py`) (or, for the kitchen views, to `GLANCE_COLORS` / `AGENDA_COLORS`) so a
+  non-surviving colour fails the suite rather than shipping to the panel.
 - **Known-invisible constants** still in `render.py`: `FAINT = (225, 226, 230)` and
   `COLOR_DRY = (210, 210, 210)`. Both quantize to white. Do not use them for
   anything load-bearing.
 
-To preview what the panel will actually display, quantize the render yourself:
+To preview what the panel will actually display, quantize the render:
 
 ```bash
-python3 -m inky_weather.main --fixture --out preview.png
-python3 -c "
-from PIL import Image
-PANEL=[(0,0,0),(255,255,255),(0,255,0),(0,0,255),(255,0,0),(255,255,0),(255,140,0)]
-im=Image.open('preview.png').convert('RGB')
-q=Image.new('RGB',im.size)
-q.putdata([min(PANEL,key=lambda p:sum((a-b)**2 for a,b in zip(p,c))) for c in im.getdata()])
-q.save('panel_sim.png')"
+python3 -m kitchen_display --fixture --view glance --out preview.png
+python3 tools/panel_sim.py preview.png panel_sim.png
 ```
 
 Review `panel_sim.png`, not `preview.png`, when judging whether a visual change works.

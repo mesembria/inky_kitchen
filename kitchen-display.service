@@ -1,0 +1,23 @@
+# kitchen-display.service — install to ~/.config/systemd/user/ and enable with:
+#   systemctl --user enable --now kitchen-display
+#   sudo loginctl enable-linger $USER      # so it survives logout / starts at boot
+[Unit]
+Description=Kitchen Display
+After=network-online.target
+Wants=network-online.target
+# Give up after 5 failed starts in 10 min — a bad commit stops crash-looping and
+# the panel keeps its last image. Fix over SSH, then: systemctl --user reset-failed
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=%h/kitchen_display
+ExecStart=%h/kitchen_display/run.sh
+Restart=always
+RestartSec=10
+StandardOutput=append:%h/kitchen_display.log
+StandardError=append:%h/kitchen_display.log
+
+[Install]
+WantedBy=default.target

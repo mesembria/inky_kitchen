@@ -4,7 +4,7 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; cd "$REPO" || exit 1
 # NOTE: the checkout path must not contain spaces -- RUN_CMD/PIP rely on word-splitting.
 PY="${INKY_PYTHON:-$REPO/.venv/bin/python}"
 PIP="${INKY_PIP:-$REPO/.venv/bin/pip}"
-RUN_CMD="${INKY_RUN_CMD:-$PY -m inky_weather.main}"
+RUN_CMD="${INKY_RUN_CMD:-$PY -m kitchen_display}"
 REMOTE="${INKY_REMOTE:-origin}"; BRANCH="${INKY_BRANCH:-main}"
 ver(){ git describe --tags --always --dirty 2>/dev/null || echo unknown; }
 log(){ echo "$(date '+%F %T') update: $*"; }
