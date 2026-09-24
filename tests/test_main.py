@@ -49,3 +49,26 @@ def test_a_render_with_every_feed_dead_raises_so_the_stale_path_runs():
     renderer = make_renderer({"location_name": "x"}, providers)
     with pytest.raises(RuntimeError):
         renderer("glance", dt.datetime(2026, 9, 23, 15, 0))
+
+
+def test_a_restart_request_re_execs_run_sh_in_place(monkeypatch):
+    # Review finding (upgraded): exiting for systemd to restart counts toward
+    # StartLimitBurst, so five D-long presses in ten minutes while iterating on
+    # code would kill the unit. Exec run.sh in place instead: same process,
+    # no systemd restart, and run.sh still pulls the new code first.
+    from kitchen_display import __main__ as km
+    from kitchen_display import manager
+    from kitchen_display.hw import buttons, panel
+
+    calls = []
+    monkeypatch.setattr(km.os, "execv", lambda path, args: calls.append((path, args)))
+
+    def restart(self):
+        raise manager.RestartRequested()
+
+    monkeypatch.setattr(manager.Manager, "run", restart)
+    monkeypatch.setattr(buttons.GpioButtons, "start", lambda self: None)
+    monkeypatch.setattr(panel, "InkyPanel", panel.NullPanel)
+    km.main(["--fixture"])
+    assert len(calls) == 1
+    assert calls[0][0].endswith("run.sh")

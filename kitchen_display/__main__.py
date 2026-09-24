@@ -16,6 +16,7 @@ from .providers import base, forecast
 from .views import registry
 
 CACHE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "last_display.png")
+RUN_SH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "run.sh")
 
 
 def _live_providers(cfg):
@@ -105,8 +106,16 @@ def main(argv=None):
     try:
         m.run()
     except manager.RestartRequested:
-        logging.info("restart requested; exiting 0 so run.sh pulls new code")
-        return 0
+        if args.simulate:
+            logging.info("restart requested; exiting (simulate)")
+            return 0
+        # Re-exec run.sh in place rather than exiting for systemd to restart us:
+        # systemd counts every restart toward StartLimitBurst, and a few D-long
+        # presses while iterating on code must not kill the unit. run.sh pulls
+        # the new code and execs the daemon again, all in this same process.
+        logging.info("restart requested; re-exec %s to pull new code", RUN_SH)
+        logging.shutdown()
+        os.execv(RUN_SH, [RUN_SH])
     return 0
 
 
