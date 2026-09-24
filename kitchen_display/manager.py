@@ -59,7 +59,9 @@ class Manager:
                                   last_refresh_at=dt.datetime.min,
                                   occupied=False,
                                   pending=None)
-        self._last_restart_day = None
+        # Restart timing is measured from when this process started, so a
+        # process born during the restart hour doesn't restart itself again.
+        self._started_at = clock()
 
     # -- event folding -------------------------------------------------
     def _fold(self, event):
@@ -136,10 +138,11 @@ class Manager:
             self._maybe_restart()
 
     def _maybe_restart(self):
-        """Exit 0 once a day so run.sh pulls new code on the systemd restart."""
+        """Exit once a day so run.sh pulls new code — once per restart time,
+        not once per process: only if the restart time fell between this
+        process starting and now."""
         now = self.clock()
-        if (now.hour == self.cfg["daily_restart_hour"]
-                and self._last_restart_day != now.date()
-                and self.state.pending is None):
-            self._last_restart_day = now.date()
+        restart_at = now.replace(hour=self.cfg["daily_restart_hour"], minute=0,
+                                 second=0, microsecond=0)
+        if self._started_at < restart_at <= now and self.state.pending is None:
             raise RestartRequested()

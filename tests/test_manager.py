@@ -159,3 +159,25 @@ def test_file_cache_survives_a_restart(tmp_path):
     assert len(p2.shown) == 1
     white = Image.new("RGB", (800, 480), (255, 255, 255))
     assert p2.shown[0].tobytes() != white.tobytes()          # the stale-stamped cache
+
+
+def test_a_process_started_during_the_restart_hour_does_not_restart_again():
+    # Review finding: _last_restart_day was per-process, so every restart during
+    # 04:00-04:59 saw "not yet today" and exited again — a startup flash each
+    # time until systemd's start limit killed the unit for good.
+    clock = FakeClock(dt.datetime(2026, 9, 23, 4, 0, 30))
+    m = _manager(clock, [])
+    m.start()
+    clock.advance(minutes=5)
+    m._maybe_restart()             # must not raise
+
+
+def test_a_process_running_across_the_restart_time_restarts_once():
+    import pytest
+
+    clock = FakeClock(dt.datetime(2026, 9, 23, 3, 59))
+    m = _manager(clock, [])
+    m.start()
+    clock.advance(minutes=2)
+    with pytest.raises(manager.RestartRequested):
+        m._maybe_restart()
