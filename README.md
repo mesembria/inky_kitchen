@@ -67,9 +67,21 @@ hardware — `a/b/c/d` are short presses, `A/B/C/D` long ones:
 python3 -m kitchen_display --fixture --simulate -v
 ```
 
-On the Pi, systemd runs the daemon and `run.sh` self-updates on every start:
+On the Pi, systemd runs the daemon and `run.sh` self-updates on every start.
+
+**If this Pi ran the weather display, remove its hourly cron line first** —
+otherwise the old app and the daemon both drive the panel (two flashes an hour,
+alternating views, and contention for SPI and GPIO):
 
 ```bash
+crontab -e        # delete the line ending in inky_weather_odin/run.sh ...
+crontab -l        # confirm it's gone
+```
+
+Then install the service:
+
+```bash
+mkdir -p ~/.config/systemd/user
 cp kitchen-display.service ~/.config/systemd/user/
 systemctl --user enable --now kitchen-display
 sudo loginctl enable-linger $USER
@@ -77,18 +89,22 @@ sudo loginctl enable-linger $USER
 
 Logs go to `~/kitchen_display.log`, one line per render.
 
-Code updates land on the next restart — the daily 04:00 exit, a long press on
-button D, or `systemctl --user restart kitchen-display`. The version string in
+Code updates land on the next restart — the daily 04:00 restart, a long press
+on button D, or `systemctl --user restart kitchen-display`. The first two re-run
+`run.sh` in place rather than exiting, so they never count against systemd's
+crash limit. The version string in
 the panel header is how you confirm an update landed.
 
 ### Auto-update
 
 Each start, `run.sh`:
-1. `git fetch` + `git reset --hard origin/main` — the Pi always matches the latest
+1. Waits up to 90s for the clock to sync (a Pi Zero has no real-time clock, so
+   after a power cut the date is wrong until NTP catches up).
+2. `git fetch` + `git reset --hard origin/main` — the Pi always matches the latest
    `main`. Config files and the cached image are gitignored, so the reset never
    touches them.
-2. Reinstalls dependencies only if `requirements.txt` changed in that update.
-3. If the network is down (fetch fails), it skips the update and runs the code
+3. Reinstalls dependencies only if `requirements.txt` changed in that update.
+4. If the network is down (fetch fails), it skips the update and runs the code
    already on disk — the display never goes dark over a failed pull.
 
 A commit that starts and then crashes is retried 5 times in 10 minutes, then
