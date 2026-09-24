@@ -13,3 +13,4 @@ inky_weather/assets/icons/
 .superpowers/
 .DS_Store
 kitchen_display/config.py
+kitchen_display/last_display.png

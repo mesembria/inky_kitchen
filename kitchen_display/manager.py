@@ -3,9 +3,39 @@ import datetime as dt
 import logging
 import queue as _queue
 
+from inky_weather import cache as wcache
+from inky_weather import render as wrender
+
 from . import events, gate
 
 log = logging.getLogger(__name__)
+
+
+class MemoryCache:
+    """Last good image, in RAM. The default, so tests never touch disk."""
+
+    def __init__(self):
+        self._img = None
+
+    def save(self, img):
+        self._img = img.copy()
+
+    def load(self):
+        return None if self._img is None else self._img.copy()
+
+
+class FileCache:
+    """Last good image on disk, so a restart with the network down re-shows it
+    (stale) instead of replacing a good picture with an error screen."""
+
+    def __init__(self, path):
+        self.path = path
+
+    def save(self, img):
+        wcache.save_display(img, self.path)
+
+    def load(self):
+        return wcache.load_display(self.path)
 
 # Short press picks a view; long press is handled by the caller (A-long swaps to
 # next week, D-long restarts the process).
@@ -18,7 +48,8 @@ class RestartRequested(Exception):
 
 
 class Manager:
-    def __init__(self, queue, panel, renderer, cfg, clock):
+    def __init__(self, queue, panel, renderer, cfg, clock, cache=None):
+        self.cache = cache if cache is not None else MemoryCache()
         self.queue = queue
         self.panel = panel
         self.renderer = renderer
@@ -50,9 +81,18 @@ class Manager:
         now = self.clock()
         try:
             img = self.renderer(decision.view, now)
+            self.cache.save(img)
+        except Exception as exc:
+            # Never a blank panel, never silently wrong data: re-show the last
+            # good image marked STALE, or an error screen if there is none.
+            log.exception("render failed for view %s", decision.view)
+            cached = self.cache.load()
+            img = (wrender.stamp_stale(cached) if cached is not None
+                   else wrender.render_error(str(exc)[:80]))
+        try:
             self.panel.show(img)
         except Exception:
-            log.exception("render failed for view %s", decision.view)
+            log.exception("panel push failed; next refresh retries")
         self.state.current_view = decision.view
         self.state.last_refresh_at = now
         self.state.pending = None

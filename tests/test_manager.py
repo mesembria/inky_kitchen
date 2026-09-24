@@ -112,3 +112,50 @@ def test_presence_clearing_flushes_a_held_refresh():
     q.put(events.PresenceChanged(False))
     m.step(timeout=0)
     assert calls == [("glance", clock.now)]
+
+
+def _flaky(calls, fail_after):
+    """Renders fine `fail_after` times, then raises every call."""
+    def render(view, now):
+        calls.append(view)
+        if len(calls) > fail_after:
+            raise RuntimeError("network down")
+        return Image.new("RGB", (800, 480), (255, 255, 255))
+    return render
+
+
+def test_a_failed_render_shows_the_last_good_image_marked_stale():
+    # Spec: never a blank panel, never silently wrong data. The last good image
+    # goes back up with a STALE marker so nobody trusts it as current.
+    clock = FakeClock(dt.datetime(2026, 9, 23, 14, 0))
+    q, p = queue.Queue(), panel.NullPanel()
+    m = manager.Manager(q, p, _flaky([], fail_after=1), CFG, clock)
+    m.start()
+    q.put(events.ButtonPressed("B"))
+    m.step(timeout=0)
+    assert len(p.shown) == 2
+    assert p.shown[1].tobytes() != p.shown[0].tobytes()     # stamped, not identical
+
+
+def test_a_failed_render_with_nothing_cached_shows_an_error_screen():
+    clock = FakeClock(dt.datetime(2026, 9, 23, 14, 0))
+    p = panel.NullPanel()
+    m = manager.Manager(queue.Queue(), p, _flaky([], fail_after=0), CFG, clock)
+    m.start()
+    assert len(p.shown) == 1
+    assert p.shown[0].size == (800, 480)
+
+
+def test_file_cache_survives_a_restart(tmp_path):
+    # After a restart with the network down, the panel must re-show the last good
+    # image (stale), not replace a perfectly good picture with an error screen.
+    path = str(tmp_path / "last.png")
+    clock = FakeClock(dt.datetime(2026, 9, 23, 14, 0))
+    manager.Manager(queue.Queue(), panel.NullPanel(), _flaky([], fail_after=1),
+                    CFG, clock, cache=manager.FileCache(path)).start()
+    p2 = panel.NullPanel()
+    manager.Manager(queue.Queue(), p2, _flaky([], fail_after=0),
+                    CFG, clock, cache=manager.FileCache(path)).start()
+    assert len(p2.shown) == 1
+    white = Image.new("RGB", (800, 480), (255, 255, 255))
+    assert p2.shown[0].tobytes() != white.tobytes()          # the stale-stamped cache
