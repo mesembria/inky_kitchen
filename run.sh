@@ -9,6 +9,19 @@ REMOTE="${INKY_REMOTE:-origin}"; BRANCH="${INKY_BRANCH:-main}"
 ver(){ git describe --tags --always --dirty 2>/dev/null || echo unknown; }
 log(){ echo "$(date '+%F %T') update: $*"; }
 
+# Boot readiness. A Pi Zero has no RTC and a systemd *user* unit can't wait for
+# network-online.target, so wait (bounded) for NTP sync: that means the network
+# is up for the fetch and the panel's date is right. Skipped where there's no
+# timedatectl (a Mac); instant once synced (every restart after boot).
+if command -v timedatectl >/dev/null 2>&1; then
+  tries="${INKY_SYNC_TRIES:-45}"; poll="${INKY_SYNC_POLL_S:-2}"
+  until [ "$(timedatectl show -p NTPSynchronized --value 2>/dev/null)" = yes ]; do
+    tries=$((tries - 1))
+    if [ "$tries" -le 0 ]; then log "clock not synced, continuing anyway"; break; fi
+    sleep "$poll"
+  done
+fi
+
 before=$(git rev-parse HEAD 2>/dev/null || echo none); before_ver=$(ver)
 req_before=$(git hash-object requirements.txt 2>/dev/null || echo none)
 fetched=0

@@ -3,8 +3,8 @@
 #   sudo loginctl enable-linger $USER      # so it survives logout / starts at boot
 [Unit]
 Description=Kitchen Display
-After=network-online.target
-Wants=network-online.target
+# No After=network-online.target: a user unit can't see it. run.sh waits for
+# NTP sync instead, which implies the network is up.
 # Give up after 5 failed starts in 10 min — a bad commit stops crash-looping and
 # the panel keeps its last image. Fix over SSH, then: systemctl --user reset-failed
 StartLimitIntervalSec=600

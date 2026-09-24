@@ -102,3 +102,41 @@ def test_requirements_change_triggers_reinstall(tmp_path):
     assert "reinstalling" in r.stdout
     assert pip_marker.exists()              # stub pip was invoked
     assert ran.exists()
+
+
+def _fake_timedatectl(tmp_path, answers):
+    """A timedatectl that answers NTPSynchronized from `answers` in order,
+    repeating the last one, and counts its calls."""
+    bindir = tmp_path / "fakebin"
+    bindir.mkdir()
+    (tmp_path / "answers").write_text("\n".join(answers) + "\n")
+    script = bindir / "timedatectl"
+    script.write_text(
+        "#!/usr/bin/env bash\n"
+        'n=$(cat "{c}" 2>/dev/null || echo 0); n=$((n+1)); echo $n > "{c}"\n'
+        'sed -n "${{n}}p" "{a}" | grep . || tail -n1 "{a}"\n'.format(
+            c=tmp_path / "calls", a=tmp_path / "answers"))
+    os.chmod(script, 0o755)
+    return str(bindir) + os.pathsep + os.environ["PATH"]
+
+
+def test_waits_for_clock_sync_before_running(tmp_path):
+    # Review finding: a Pi Zero has no RTC and a user unit can't wait for the
+    # network, so after a power cut the first fetch raced the network and the
+    # panel could show a stale date. run.sh waits (bounded) for NTP sync.
+    origin, clone = _make_origin_and_clone(tmp_path)
+    path = _fake_timedatectl(tmp_path, ["no", "no", "yes"])
+    ran = clone / "ran.marker"
+    _run(clone, PATH=path, INKY_SYNC_POLL_S="0", INKY_RUN_CMD="touch {}".format(ran))
+    assert ran.exists()
+    assert (tmp_path / "calls").read_text().strip() == "3"
+
+
+def test_clock_sync_wait_is_bounded(tmp_path):
+    origin, clone = _make_origin_and_clone(tmp_path)
+    path = _fake_timedatectl(tmp_path, ["no"])
+    ran = clone / "ran.marker"
+    r = _run(clone, PATH=path, INKY_SYNC_TRIES="4", INKY_SYNC_POLL_S="0",
+             INKY_RUN_CMD="touch {}".format(ran))
+    assert ran.exists()                          # runs anyway: stale beats dark
+    assert "clock not synced" in r.stdout
