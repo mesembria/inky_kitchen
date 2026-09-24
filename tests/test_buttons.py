@@ -96,3 +96,15 @@ def test_gpio_long_press_with_press_bounce_stays_one_long_press():
     g._edge("D", pressed=False, at_s=12.600)
     assert q.qsize() == 1
     assert q.get_nowait() == events.ButtonPressed("D", long=True)
+
+
+def test_gpio_start_logs_and_returns_when_gpiod_is_unavailable(caplog):
+    # Review finding: a missing or v1 gpiod killed the button thread with only a
+    # thread traceback — all four buttons silently dead. There is no gpiod on a
+    # Mac, so this exercises exactly that path.
+    import logging
+
+    g = buttons.GpioButtons(queue.Queue(), CFG)
+    with caplog.at_level(logging.ERROR):
+        g.start()                                  # must not raise
+    assert "buttons disabled" in caplog.text

@@ -50,6 +50,15 @@ class GpioButtons:
         self._last_edge = {}
 
     def start(self):
+        """Run the GPIO read loop. Never raises: if the buttons can't be set up,
+        the panel keeps working and the log says so plainly."""
+        try:
+            self._run()
+        except Exception:
+            log.exception("buttons disabled: GPIO setup or read failed "
+                          "(needs gpiod>=2 on the Pi)")
+
+    def _run(self):
         import gpiod
         from gpiod.line import Bias, Direction, Edge
 
