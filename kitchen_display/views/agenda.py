@@ -15,6 +15,10 @@ AGENDA_COLORS = [wr.INK, wr.RED]
 ROW_GAP = 4
 DAY_COL_W = 78
 TIME_GAP = 8
+LINE_H = 23          # one event line
+DAY_LABEL_H = 36     # day name + date sublabel
+ROW_PAD = 8          # breathing room under each row
+MAX_ITEMS = 3
 
 
 @dataclass(frozen=True)
@@ -72,6 +76,33 @@ def day_rows(events, start_date, days, today):
     return rows
 
 
+@dataclass(frozen=True)
+class Slot:
+    top: float
+    height: float
+    max_items: int
+
+
+def layout(rows, h):
+    """Give each day the height its events need, then share out the slack.
+
+    A fixed height per row lets a busy day overprint the next one. If even the
+    minimum doesn't fit, cap the events shown per day until it does.
+    """
+    for cap in range(MAX_ITEMS, 0, -1):
+        need = [max(DAY_LABEL_H, min(len(r.items), cap) * LINE_H) + ROW_PAD
+                for r in rows]
+        if sum(need) <= h or cap == 1:
+            break
+    slack = max(0.0, h - sum(need)) / len(rows)
+    slots, top = [], 0.0
+    for n in need:
+        height = min(n + slack, h - top)
+        slots.append(Slot(top=top, height=height, max_items=cap))
+        top += height
+    return slots
+
+
 def fit_text(text, font, max_px):
     """Truncate with an ellipsis so a long title never overflows its column."""
     if not text or font.getlength(text) <= max_px:
@@ -90,17 +121,16 @@ def render(draw, x, y, w, h, rows):
     item_font = wr.display_font(19, 400)
     quiet_font = wr.display_font(19, 300)
 
-    row_h = h / len(rows)
     text_x = x + DAY_COL_W + TIME_GAP
     text_w = w - DAY_COL_W - TIME_GAP
 
-    for i, row in enumerate(rows):
-        top = y + i * row_h
+    for i, (row, slot) in enumerate(zip(rows, layout(rows, h))):
+        top = y + slot.top
         if i:
             wr._dotted_line(draw, x, x + w, top - ROW_GAP / 2, wr.INK)
         day_color = wr.RED if row.is_weekend else wr.INK
         if row.is_today:
-            draw.rectangle([x - 8, top, x - 5, top + row_h - ROW_GAP], fill=wr.INK)
+            draw.rectangle([x - 8, top, x - 5, top + slot.height - ROW_GAP], fill=wr.INK)
         draw.text((x, top), row.label, font=day_font, fill=day_color)
         draw.text((x, top + 20), row.sublabel, font=sub_font, fill=wr.INK)
 
@@ -109,7 +139,7 @@ def render(draw, x, y, w, h, rows):
             continue
 
         iy = top
-        for item in row.items[:3]:
+        for item in row.items[:slot.max_items]:
             tx = text_x
             if item.all_day:
                 tag = "ALL DAY"
@@ -124,4 +154,4 @@ def render(draw, x, y, w, h, rows):
             avail = text_w - (tx - text_x)
             draw.text((tx, iy), fit_text(item.title, item_font, avail),
                       font=item_font, fill=wr.INK)
-            iy += 23
+            iy += LINE_H

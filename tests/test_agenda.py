@@ -91,3 +91,28 @@ def test_agenda_colors_survive_seven_color_quantization():
 
     for color in agenda.AGENDA_COLORS:
         assert nearest(color) != (255, 255, 255), color
+
+
+def _busy(rows, counts):
+    for row, n in zip(rows, counts):
+        row.items = [agenda.Item("9:00a", f"Event {i}") for i in range(n)]
+    return rows
+
+
+def test_a_busy_day_gets_a_taller_row_and_rows_never_overlap():
+    # Seen on the real family calendar: a three-event Monday overprinted Tuesday
+    # when every row had the same fixed height.
+    rows = _busy(agenda.day_rows([], MON, 7, today=MON), [3, 1, 2, 1, 2, 1, 3])
+    slots = agenda.layout(rows, 410)
+    assert slots[0].height >= 3 * agenda.LINE_H
+    for a, b in zip(slots, slots[1:]):
+        assert a.top + a.height <= b.top
+    assert slots[-1].top + slots[-1].height <= 410
+    assert all(s.max_items == 3 for s in slots)
+
+
+def test_an_overfull_week_caps_items_per_day_so_everything_fits():
+    rows = _busy(agenda.day_rows([], MON, 7, today=MON), [5] * 7)
+    slots = agenda.layout(rows, 410)
+    assert slots[-1].top + slots[-1].height <= 410
+    assert all(s.max_items >= 1 for s in slots)
