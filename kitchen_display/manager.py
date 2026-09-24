@@ -82,6 +82,7 @@ class Manager:
         try:
             img = self.renderer(decision.view, now)
             self.cache.save(img)
+            log.info("rendered %s (%s)", decision.view, decision.reason)
         except Exception as exc:
             # Never a blank panel, never silently wrong data: re-show the last
             # good image marked STALE, or an error screen if there is none.
