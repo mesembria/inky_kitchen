@@ -10,3 +10,6 @@ inky_weather/assets/icons/
 *.out.png
 # generated preview/screenshot artifacts at repo root
 /*.png
+.superpowers/
+.DS_Store
+kitchen_display/config.py
