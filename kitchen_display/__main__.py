@@ -55,7 +55,16 @@ def build_context(cfg, providers, now):
 def make_renderer(cfg, providers):
     """A fresh Context per render, so the date is never frozen at startup."""
     def render(view_name, now):
-        return registry.render(view_name, build_context(cfg, providers, now))
+        if view_name == "weather":           # fetches its own data
+            return registry.render(view_name, base.Context(
+                now=now, version="", location_name=cfg.get("location_name", "")))
+        ctx = build_context(cfg, providers, now)
+        if ctx.forecast is None and ctx.events is None and ctx.meals is None:
+            # Every feed is dead. Rendering now would put up an empty panel
+            # headed "updated <now>" and overwrite the last good image; raise so
+            # the manager re-shows that image marked STALE instead.
+            raise RuntimeError("no data from any provider")
+        return registry.render(view_name, ctx)
     return render
 
 
