@@ -140,3 +140,45 @@ def test_clock_sync_wait_is_bounded(tmp_path):
              INKY_RUN_CMD="touch {}".format(ran))
     assert ran.exists()                          # runs anyway: stale beats dark
     assert "clock not synced" in r.stdout
+
+
+def _counting_pip(tmp_path, exit_code):
+    """A pip stub that counts its calls and exits with exit_code."""
+    count = tmp_path / "pip.count"
+    stub = tmp_path / "pip-count.sh"
+    stub.write_text(
+        "#!/usr/bin/env bash\n"
+        'n=$(cat "{c}" 2>/dev/null || echo 0); echo $((n+1)) > "{c}"\n'
+        "exit {code}\n".format(c=count, code=exit_code))
+    os.chmod(stub, 0o755)
+    return str(stub), count
+
+
+def test_a_failed_reinstall_is_retried_on_the_next_start(tmp_path):
+    # A pull that brings a new dependency, then a pip failure (PyPI hiccup,
+    # low disk): the next start must try again, or the daemon can never
+    # import the new code and the panel freezes until someone SSHes in.
+    origin, clone = _make_origin_and_clone(tmp_path)
+    (origin / "requirements.txt").write_text("requests\nicalendar\n")
+    _git(origin, "add", "-A")
+    _git(origin, "commit", "-q", "-m", "add dep")
+    pip, count = _counting_pip(tmp_path, 1)
+    env = dict(INKY_PIP=pip, INKY_RUN_CMD="true",
+               INKY_REQ_STAMP=str(tmp_path / "stamp"))
+    _run(clone, **env)
+    _run(clone, **env)
+    assert count.read_text().strip() == "2"
+
+
+def test_a_successful_reinstall_is_not_repeated(tmp_path):
+    origin, clone = _make_origin_and_clone(tmp_path)
+    (origin / "requirements.txt").write_text("requests\nicalendar\n")
+    _git(origin, "add", "-A")
+    _git(origin, "commit", "-q", "-m", "add dep")
+    pip, count = _counting_pip(tmp_path, 0)
+    env = dict(INKY_PIP=pip, INKY_RUN_CMD="true",
+               INKY_REQ_STAMP=str(tmp_path / "stamp"))
+    _run(clone, **env)
+    r = _run(clone, **env)
+    assert count.read_text().strip() == "1"
+    assert "reinstalling" not in r.stdout
