@@ -274,3 +274,48 @@ def test_fixture_meals_have_a_two_meal_night_today():
                                                today + dt.timedelta(days=1), TZ)]
     assert titles == ["Crispy Gnocchi With Tomato and Red Onion",
                       "Fast Oven Barbecue Chicken"]
+
+
+def test_utc_recurring_event_keeps_wall_time_via_x_wr_timezone():
+    # Google feeds anchor some series in UTC and name the zone in the
+    # calendar-level X-WR-TIMEZONE. Splitting the feed per series must keep
+    # that header, or a 5:00p lesson reads 4:00p after the DST change.
+    text = ("BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//test//test//EN\n"
+            "X-WR-TIMEZONE:America/Denver\n"
+            + _vevent("w", "DTSTART:20261001T230000Z", "DTEND:20261002T000000Z",
+                      "RRULE:FREQ=WEEKLY;COUNT=6", "SUMMARY:Lesson")
+            + "END:VCALENDAR\n")
+    occ = _occ(text)
+    assert [o.start.hour for o in occ] == [17] * 6
+
+
+def test_utc_evening_event_on_the_last_day_of_the_window_is_kept():
+    # The window's end is a local date. Nov 8 7:00p MST is 02:00Z on Nov 9;
+    # read as a UTC boundary, the window would stop at 5:00p Denver time.
+    text = _cal(_vevent("e", "DTSTART:20261109T020000Z", "DTEND:20261109T030000Z",
+                        "SUMMARY:Sunday dinner"))
+    occ = ics.occurrences(text, dt.date(2026, 10, 26), dt.date(2026, 11, 9), TZ)
+    assert [(o.title, o.start_date) for o in occ] == [("Sunday dinner",
+                                                       dt.date(2026, 11, 8))]
+
+
+def test_utc_morning_event_just_after_the_window_is_excluded():
+    # Mirror of the above: 01:00Z Oct 26 is still Oct 25 in Denver.
+    text = _cal(_vevent("e", "DTSTART:20261026T010000Z", "DTEND:20261026T020000Z",
+                        "SUMMARY:Saturday late"))
+    assert ics.occurrences(text, dt.date(2026, 10, 26), dt.date(2026, 11, 9), TZ) == []
+
+
+def test_a_byte_order_mark_does_not_make_the_feed_unreadable(tmp_path):
+    feed = ics.IcsFeed("https://example.invalid/secret.ics",
+                       str(tmp_path / "events.ics"), get=_get_returning("﻿" + GOOD))
+    assert feed.text() == GOOD
+
+
+def test_all_day_events_at_the_window_edges():
+    text = _cal(_vevent("b", "DTSTART;VALUE=DATE:20261025", "SUMMARY:Day before"),
+                _vevent("f", "DTSTART;VALUE=DATE:20261026", "SUMMARY:First day"),
+                _vevent("l", "DTSTART;VALUE=DATE:20261108", "SUMMARY:Last day"),
+                _vevent("a", "DTSTART;VALUE=DATE:20261109", "SUMMARY:Day after"))
+    occ = ics.occurrences(text, dt.date(2026, 10, 26), dt.date(2026, 11, 9), TZ)
+    assert [o.title for o in occ] == ["First day", "Last day"]

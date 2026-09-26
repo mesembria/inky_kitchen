@@ -49,6 +49,8 @@ def _series(cal):
     recurring-ical-events raises for the whole calendar when a single VEVENT
     is malformed, so each series is expanded on its own. Overrides share their
     master's UID, which keeps moved instances with the rule they replace.
+    Calendar-level properties come along too: Google's X-WR-TIMEZONE is what
+    keeps a UTC-anchored series at its wall time across DST.
     """
     zones = [c for c in cal.subcomponents if c.name == "VTIMEZONE"]
     groups = {}
@@ -57,6 +59,8 @@ def _series(cal):
             groups.setdefault(str(comp.get("UID", id(comp))), []).append(comp)
     for uid, comps in groups.items():
         mini = icalendar.Calendar()
+        for key, value in cal.items():
+            mini[key] = value
         for c in zones + comps:
             mini.add_component(c)
         yield uid, mini
@@ -91,10 +95,15 @@ def occurrences(text, start, end, tz):
     order. Raises ValueError if text is not a calendar. A broken series is
     logged and skipped.
     """
+    # Bound the window in the display zone. Bare dates would be read against
+    # each event's own zone, so a UTC event at 7:00p on the last local day
+    # would fall outside a window that ended at 00:00Z.
+    lo = dt.datetime.combine(start, dt.time(), tz)
+    hi = dt.datetime.combine(end, dt.time(), tz)
     out = []
     for uid, mini in _series(parse(text)):
         try:
-            for comp in recurring_ical_events.of(mini).between(start, end):
+            for comp in recurring_ical_events.of(mini).between(lo, hi):
                 if str(comp.get("STATUS", "")).upper() == "CANCELLED":
                     continue
                 out.append(_occurrence(comp, tz))
@@ -128,8 +137,9 @@ class IcsFeed:
             resp = self._get(self.url, timeout=self.timeout)
             resp.raise_for_status()
             # ICS is UTF-8 by spec; servers often omit the charset, and
-            # requests would then decode text/* as Latin-1.
-            body = resp.content.decode("utf-8", errors="replace")
+            # requests would then decode text/* as Latin-1. -sig drops a BOM,
+            # which would otherwise make every fetch fail to parse.
+            body = resp.content.decode("utf-8-sig", errors="replace")
             parse(body)
         except Exception as e:
             # Only the exception type: requests' messages embed the URL.
