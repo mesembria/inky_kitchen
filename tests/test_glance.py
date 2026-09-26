@@ -33,23 +33,97 @@ def test_hourly_slice_of_none_is_empty():
 
 
 def test_dinner_lines_when_tonight_is_planned():
-    meals = {dt.date(2026, 9, 21): "Chicken tikka masala",
-             dt.date(2026, 9, 22): "Pasta with Garlicky Broccoli"}
+    meals = {dt.date(2026, 9, 21): ["Chicken tikka masala"],
+             dt.date(2026, 9, 22): ["Pasta with Garlicky Broccoli"]}
     tonight, label, nxt = glance.dinner_lines(meals, dt.date(2026, 9, 21))
-    assert tonight == "Chicken tikka masala"
-    assert (label, nxt) == ("Tomorrow", "Pasta with Garlicky Broccoli")
+    assert tonight == ["Chicken tikka masala"]
+    assert (label, nxt) == ("Tomorrow", ["Pasta with Garlicky Broccoli"])
 
 
 def test_dinner_lines_when_tonight_is_empty_shows_the_next_planned_meal():
-    meals = {dt.date(2026, 9, 24): "Chicken And Couscous With Chickpeas"}
+    meals = {dt.date(2026, 9, 24): ["Chicken And Couscous With Chickpeas"]}
     tonight, label, nxt = glance.dinner_lines(meals, dt.date(2026, 9, 21))
-    assert tonight is None
+    assert tonight == []
     assert label == "Thu"
-    assert nxt == "Chicken And Couscous With Chickpeas"
+    assert nxt == ["Chicken And Couscous With Chickpeas"]
 
 
-def test_dinner_lines_with_no_meal_provider_is_all_none():
-    assert glance.dinner_lines(None, dt.date(2026, 9, 21)) == (None, None, None)
+def test_dinner_lines_keeps_both_meals_of_a_two_meal_night():
+    meals = {dt.date(2026, 9, 21): ["Crispy Gnocchi", "Fast Oven Barbecue Chicken"]}
+    tonight, _, _ = glance.dinner_lines(meals, dt.date(2026, 9, 21))
+    assert tonight == ["Crispy Gnocchi", "Fast Oven Barbecue Chicken"]
+
+
+def test_dinner_lines_skips_a_future_day_with_an_empty_list():
+    meals = {dt.date(2026, 9, 22): [], dt.date(2026, 9, 23): ["Tacos"]}
+    _, label, nxt = glance.dinner_lines(meals, dt.date(2026, 9, 21))
+    assert (label, nxt) == ("Wed", ["Tacos"])
+
+
+def test_dinner_lines_with_no_meal_provider_is_empty():
+    assert glance.dinner_lines(None, dt.date(2026, 9, 21)) == ([], None, [])
+
+
+class _Recorder:
+    def __init__(self, draw):
+        self._d = draw
+        self.texts = []
+
+    def text(self, xy, text, **kw):
+        self.texts.append(text)
+        return self._d.text(xy, text, **kw)
+
+    def __getattr__(self, name):
+        return getattr(self._d, name)
+
+
+def _rail_texts(meals, monkeypatch):
+    """Render the glance, recording every string its own Draw object drew."""
+    from PIL import ImageDraw
+    recs = []
+    real = ImageDraw.Draw
+
+    def recording(img):
+        rec = _Recorder(real(img))
+        recs.append(rec)
+        return rec
+
+    monkeypatch.setattr(glance.ImageDraw, "Draw", recording)
+    img = glance.render(_ctx(meals=meals))
+    return img, recs[0].texts
+
+
+def test_two_meals_tonight_are_both_drawn(monkeypatch):
+    today = NOW.date()
+    _, texts = _rail_texts({today: ["Crispy Gnocchi", "Barbecue Chicken"],
+                            today + dt.timedelta(days=1): ["Tacos"]}, monkeypatch)
+    assert "Crispy Gnocchi" in texts and "Barbecue Chicken" in texts
+    assert "Tacos" in texts
+
+
+def test_three_meals_tonight_show_one_and_a_count(monkeypatch):
+    today = NOW.date()
+    _, texts = _rail_texts({today: ["A", "B", "C"]}, monkeypatch)
+    assert "A" in texts and "+2 more" in texts and "B" not in texts
+
+
+def test_next_planned_day_with_two_meals_shows_the_first_and_a_count(monkeypatch):
+    today = NOW.date()
+    _, texts = _rail_texts({today + dt.timedelta(days=1): ["Tacos", "Salad"]},
+                           monkeypatch)
+    assert "Tacos +1" in texts
+
+
+def test_a_two_meal_night_stays_above_the_bottom_margin(monkeypatch):
+    from inky_weather import render as wr
+    today = NOW.date()
+    img, _ = _rail_texts({today: ["Crispy Gnocchi With Tomato and Red Onion",
+                                  "Fast Oven Barbecue Chicken"],
+                          today + dt.timedelta(days=1): ["Skillet Chili Mac", "Salad"]},
+                         monkeypatch)
+    for y in range(wr.HEIGHT - 17, wr.HEIGHT):
+        for x in range(glance.RAIL_X, glance.RAIL_X + glance.RAIL_W):
+            assert img.getpixel((x, y)) == wr.PAPER, (x, y)
 
 
 def test_render_produces_a_panel_sized_image():

@@ -24,6 +24,7 @@ VRULE_X = 268
 AGENDA_X = 290
 HEADER_H = 42
 BODY_Y = 52
+NEXT_H = 37          # next-planned label + title
 
 
 def hourly_slice(forecast, count=6):
@@ -34,20 +35,21 @@ def hourly_slice(forecast, count=6):
 
 
 def dinner_lines(meals, today):
-    """(tonight, next_label, next_meal).
+    """(tonight, next_label, next_meals); tonight and next_meals are lists.
 
-    Tonight is None when nothing is planned — the rail says so in light weight
-    and shows the next planned meal beneath, rather than hiding the block.
+    Tonight is empty when nothing is planned — the rail says so in light
+    weight and shows the next planned meal beneath, rather than hiding the
+    block. Some nights carry two meals; both are kept, in feed order.
     """
     if not meals:
-        return (None, None, None)
-    tonight = meals.get(today)
-    future = sorted(d for d in meals if d > today)
+        return ([], None, [])
+    tonight = list(meals.get(today) or [])
+    future = sorted(d for d in meals if d > today and meals[d])
     if not future:
-        return (tonight, None, None)
+        return (tonight, None, [])
     nxt = future[0]
     label = "Tomorrow" if nxt == today + dt.timedelta(days=1) else nxt.strftime("%a")
-    return (tonight, label, meals[nxt])
+    return (tonight, label, list(meals[nxt]))
 
 
 def _header(draw, ctx):
@@ -109,20 +111,30 @@ def _rail(img, draw, ctx):
         y += 14
         draw.text((RAIL_X, y), "TONIGHT", font=wr.display_font(13, 600), fill=wr.RED)
         y += 16
+        meal_font = wr.display_font(19, 600)
+        quiet_font = wr.display_font(16, 300)
         if tonight:
-            draw.text((RAIL_X, y), agenda.fit_text(tonight, wr.display_font(19, 600),
-                                                   RAIL_W),
-                      font=wr.display_font(19, 600), fill=wr.INK)
+            shown, hidden = agenda.visible(tonight, 2)
+            for title in shown:
+                draw.text((RAIL_X, y), agenda.fit_text(title, meal_font, RAIL_W),
+                          font=meal_font, fill=wr.INK)
+                y += 24
+            if hidden:
+                draw.text((RAIL_X, y), f"+{hidden} more", font=quiet_font, fill=wr.INK)
+                y += 24
         else:
-            draw.text((RAIL_X, y), "Nothing planned",
-                      font=wr.display_font(16, 300), fill=wr.INK)
-        y += 24
-        if nxt:
+            draw.text((RAIL_X, y), "Nothing planned", font=quiet_font, fill=wr.INK)
+            y += 24
+        # A two-meal night costs a line; if the next-planned line would then
+        # run into the bottom margin, drop it rather than shrink the type.
+        if nxt and y + NEXT_H <= wr.HEIGHT - 18:
+            next_font = wr.display_font(17, 600)
+            suffix = f" +{len(nxt) - 1}" if len(nxt) > 1 else ""
+            first = agenda.fit_text(nxt[0], next_font,
+                                    RAIL_W - next_font.getlength(suffix))
             draw.text((RAIL_X, y), label.upper(), font=wr.display_font(13, 600),
                       fill=wr.INK)
-            draw.text((RAIL_X, y + 15),
-                      agenda.fit_text(nxt, wr.display_font(17, 600), RAIL_W),
-                      font=wr.display_font(17, 600), fill=wr.INK)
+            draw.text((RAIL_X, y + 15), first + suffix, font=next_font, fill=wr.INK)
 
 
 def render(ctx):
