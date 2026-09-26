@@ -1,7 +1,9 @@
 import datetime as dt
+import os
 from zoneinfo import ZoneInfo
 
 import pytest
+import requests
 
 from kitchen_display.providers import ics
 
@@ -144,3 +146,89 @@ def test_all_day_sorts_before_timed_and_ties_keep_feed_order():
 def test_text_that_is_not_a_calendar_raises_value_error(bad):
     with pytest.raises(ValueError):
         ics.parse(bad)
+
+
+GOOD = _cal(_vevent("g", "DTSTART;VALUE=DATE:20261009", "SUMMARY:Café night"))
+
+
+class _Resp:
+    def __init__(self, body, status=200):
+        self.content = body.encode("utf-8")
+        self.status_code = status
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise requests.HTTPError(str(self.status_code))
+
+
+def _get_returning(body, status=200):
+    return lambda url, timeout: _Resp(body, status)
+
+
+def _get_raising(url, timeout):
+    raise requests.ConnectionError("offline")
+
+
+def _feed(tmp_path, get, clock=lambda: 1_000_000.0, sub="cache"):
+    return ics.IcsFeed("https://example.invalid/secret.ics",
+                       str(tmp_path / sub / "events.ics"),
+                       max_age_s=3600, get=get, clock=clock)
+
+
+def test_a_good_fetch_returns_the_text_and_caches_it(tmp_path):
+    # Review Focus 4: the cache dir does not exist yet on a fresh Pi.
+    feed = _feed(tmp_path, _get_returning(GOOD))
+    assert feed.text() == GOOD
+    assert (tmp_path / "cache" / "events.ics").read_text(encoding="utf-8") == GOOD
+
+
+def test_bytes_are_decoded_as_utf8_whatever_the_server_says(tmp_path):
+    # Review Focus 3: text/calendar without a charset would decode as Latin-1.
+    assert "Café" in _feed(tmp_path, _get_returning(GOOD)).text()
+
+
+def test_a_failed_fetch_falls_back_to_a_fresh_cache(tmp_path):
+    _feed(tmp_path, _get_returning(GOOD)).text()
+    mtime = os.path.getmtime(tmp_path / "cache" / "events.ics")
+    feed = _feed(tmp_path, _get_raising, clock=lambda: mtime + 60)
+    assert feed.text() == GOOD
+
+
+def test_a_failed_fetch_with_a_stale_cache_returns_none(tmp_path):
+    _feed(tmp_path, _get_returning(GOOD)).text()
+    mtime = os.path.getmtime(tmp_path / "cache" / "events.ics")
+    feed = _feed(tmp_path, _get_raising, clock=lambda: mtime + 3601)
+    assert feed.text() is None
+
+
+def test_a_failed_fetch_with_no_cache_returns_none(tmp_path):
+    assert _feed(tmp_path, _get_raising).text() is None
+
+
+def test_an_http_error_falls_back_to_the_cache(tmp_path):
+    _feed(tmp_path, _get_returning(GOOD)).text()
+    mtime = os.path.getmtime(tmp_path / "cache" / "events.ics")
+    assert _feed(tmp_path, _get_returning("gone", 404),
+                 clock=lambda: mtime + 60).text() == GOOD
+
+
+def test_a_200_html_page_never_replaces_the_good_cache(tmp_path):
+    # Review Focus 2: a revoked secret URL answers 200 with a sign-in page.
+    _feed(tmp_path, _get_returning(GOOD)).text()
+    mtime = os.path.getmtime(tmp_path / "cache" / "events.ics")
+    feed = _feed(tmp_path, _get_returning("<html>Sign in</html>"),
+                 clock=lambda: mtime + 60)
+    assert feed.text() == GOOD
+    assert (tmp_path / "cache" / "events.ics").read_text(encoding="utf-8") == GOOD
+
+
+def test_an_unwritable_cache_still_returns_fresh_text(tmp_path):
+    # Review Focus 4: a cache path that can't be created (a file sits where
+    # the directory should be) must not cost the fresh fetch.
+    (tmp_path / "cache").write_text("not a directory")
+    assert _feed(tmp_path, _get_returning(GOOD)).text() == GOOD
+
+
+def test_the_url_never_appears_in_the_log(tmp_path, caplog):
+    _feed(tmp_path, _get_raising).text()
+    assert "secret.ics" not in caplog.text

@@ -8,11 +8,14 @@ into the inclusive last day the agenda draws.
 """
 import datetime as dt
 import logging
+import os
+import time
 from dataclasses import dataclass
 from typing import Optional
 
 import icalendar
 import recurring_ical_events
+import requests
 
 log = logging.getLogger(__name__)
 
@@ -99,3 +102,60 @@ def occurrences(text, start, end, tz):
     out.sort(key=lambda o: (o.start_date, not o.all_day,
                             o.start.timestamp() if o.start else 0.0))
     return out
+
+
+class IcsFeed:
+    """One secret ICS URL, with its last good copy on disk.
+
+    text() returns fresh text when the fetch works, the cached copy when it
+    doesn't (if younger than max_age_s), else None. Text is cached only after
+    it parses, so a sign-in page or a truncated download never replaces a
+    good copy. The URL is a secret: it is never logged.
+    """
+
+    def __init__(self, url, cache_path, timeout=15, max_age_s=24 * 3600,
+                 get=None, clock=time.time):
+        self.url = url
+        self.cache_path = cache_path
+        self.timeout = timeout
+        self.max_age_s = max_age_s
+        self._get = get or requests.get
+        self._clock = clock
+
+    def text(self):
+        try:
+            resp = self._get(self.url, timeout=self.timeout)
+            resp.raise_for_status()
+            # ICS is UTF-8 by spec; servers often omit the charset, and
+            # requests would then decode text/* as Latin-1.
+            body = resp.content.decode("utf-8", errors="replace")
+            parse(body)
+        except Exception as e:
+            # Only the exception type: requests' messages embed the URL.
+            log.warning("ICS fetch for %s failed (%s); trying the cached copy",
+                        os.path.basename(self.cache_path), type(e).__name__)
+            return self._cached()
+        self._save(body)
+        return body
+
+    def _save(self, body):
+        try:
+            os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
+            tmp = self.cache_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(body)
+            os.replace(tmp, self.cache_path)
+        except OSError:
+            log.warning("could not write ICS cache %s", self.cache_path, exc_info=True)
+
+    def _cached(self):
+        try:
+            age = self._clock() - os.path.getmtime(self.cache_path)
+            if age > self.max_age_s:
+                log.warning("ICS cache %s is %.0fh old; dropping the block",
+                            os.path.basename(self.cache_path), age / 3600)
+                return None
+            with open(self.cache_path, encoding="utf-8") as f:
+                return f.read()
+        except OSError:
+            return None
