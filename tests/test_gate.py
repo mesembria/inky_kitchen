@@ -64,3 +64,23 @@ def test_clock_moving_backward_counts_as_due():
     d = gate.decide(st, NOW, CFG)
     assert isinstance(d, gate.Render)
     assert d.view == "glance"
+
+
+MIDNIGHT = dt.datetime(2026, 9, 24, 0, 1, 0)
+
+
+def test_a_new_day_is_due_so_today_is_never_an_hour_late():
+    st = _state(last_refresh_at=dt.datetime(2026, 9, 23, 23, 50))
+    d = gate.decide(st, MIDNIGHT, CFG)
+    assert isinstance(d, gate.Render)
+    assert (d.view, d.reason) == ("glance", "scheduled")
+
+
+def test_a_new_day_waits_for_an_occupied_room_like_any_scheduled_refresh():
+    st = _state(last_refresh_at=dt.datetime(2026, 9, 23, 23, 50), occupied=True)
+    assert gate.decide(st, MIDNIGHT, CFG) is gate.HOLD
+
+
+def test_after_the_midnight_redraw_the_day_is_quiet_again():
+    st = _state(last_refresh_at=MIDNIGHT)
+    assert gate.decide(st, MIDNIGHT + dt.timedelta(minutes=5), CFG) is gate.NOTHING

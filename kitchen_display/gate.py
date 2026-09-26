@@ -50,8 +50,11 @@ def decide(state, now, cfg):
     if elapsed > cfg["staleness_ceiling_s"]:
         return Render("glance", "stale")
 
-    # 3/4. Due, or held from earlier and the room has now cleared.
-    due = elapsed > cfg["refresh_interval_s"] or state.pending is not None
+    # 3/4. Due, or held from earlier and the room has now cleared. A new day
+    # is due too, or "Today" would sit on yesterday for up to an hour.
+    due = (elapsed > cfg["refresh_interval_s"]
+           or now.date() != state.last_refresh_at.date()
+           or state.pending is not None)
     if due:
         if state.occupied:
             return HOLD
