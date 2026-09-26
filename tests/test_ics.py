@@ -232,3 +232,45 @@ def test_an_unwritable_cache_still_returns_fresh_text(tmp_path):
 def test_the_url_never_appears_in_the_log(tmp_path, caplog):
     _feed(tmp_path, _get_raising).text()
     assert "secret.ics" not in caplog.text
+
+
+FIXTURES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "kitchen_display", "fixtures")
+
+
+def test_shift_dates_moves_only_date_properties():
+    text = ("DTSTART;TZID=America/Denver:20260102T153000\n"
+            "DTEND;VALUE=DATE:20260106\n"
+            "EXDATE;TZID=America/Denver:20260109T153000\n"
+            "RECURRENCE-ID:20260116T153000Z\n"
+            "SUMMARY:Meet 20260101\n")
+    out = ics.shift_dates(text, 10).splitlines()
+    assert out == ["DTSTART;TZID=America/Denver:20260112T153000",
+                   "DTEND;VALUE=DATE:20260116",
+                   "EXDATE;TZID=America/Denver:20260119T153000",
+                   "RECURRENCE-ID:20260126T153000Z",
+                   "SUMMARY:Meet 20260101"]
+
+
+def test_fixture_events_land_relative_to_today():
+    today = dt.date(2026, 9, 26)
+    feed = ics.FixtureFeed(os.path.join(FIXTURES, "events.ics"), today=lambda: today)
+    occ = ics.occurrences(feed.text(), today, today + dt.timedelta(days=21), TZ)
+    by_day = {}
+    for o in occ:
+        by_day.setdefault((o.start_date - today).days, []).append(o.title)
+    assert len(by_day[1]) == 5                                   # overflow day
+    assert "Cancelled meeting" not in sum(by_day.values(), [])
+    assert "Piano lesson" not in by_day.get(8, [])               # EXDATE
+    assert "Piano lesson (moved)" in by_day[16]                  # moved instance
+    late = next(o for o in occ if o.title == "Late show")
+    assert late.end_date == late.start_date                      # midnight end
+
+
+def test_fixture_meals_have_a_two_meal_night_today():
+    today = dt.date(2026, 9, 26)
+    feed = ics.FixtureFeed(os.path.join(FIXTURES, "meals.ics"), today=lambda: today)
+    titles = [o.title for o in ics.occurrences(feed.text(), today,
+                                               today + dt.timedelta(days=1), TZ)]
+    assert titles == ["Crispy Gnocchi With Tomato and Red Onion",
+                      "Fast Oven Barbecue Chicken"]

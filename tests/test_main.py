@@ -72,3 +72,37 @@ def test_a_restart_request_re_execs_run_sh_in_place(monkeypatch):
     km.main(["--fixture"])
     assert len(calls) == 1
     assert calls[0][0].endswith("run.sh")
+
+
+def test_unset_ics_urls_leave_the_null_providers():
+    from kitchen_display import settings
+    from kitchen_display.__main__ import _calendar_providers
+    from kitchen_display.providers import base
+    p = _calendar_providers(dict(settings.DEFAULTS))
+    assert isinstance(p["events"], base.NullEvents)
+    assert isinstance(p["meals"], base.NullMeals)
+
+
+def test_set_ics_urls_build_cached_ics_providers():
+    from kitchen_display import settings
+    from kitchen_display.__main__ import _calendar_providers, ICS_CACHE_DIR
+    from kitchen_display.providers import calendar
+    cfg = dict(settings.DEFAULTS, calendar_ics_url="https://example.invalid/a.ics",
+               meals_ics_url="https://example.invalid/b.ics")
+    p = _calendar_providers(cfg)
+    assert isinstance(p["events"], calendar.IcsEvents)
+    assert isinstance(p["meals"], calendar.IcsMeals)
+    assert p["events"].feed.cache_path == os.path.join(ICS_CACHE_DIR, "events.ics")
+    assert p["meals"].feed.cache_path == os.path.join(ICS_CACHE_DIR, "meals.ics")
+
+
+def test_fixture_context_has_events_and_tonights_two_meals():
+    import datetime as dt
+    from kitchen_display import settings
+    from kitchen_display.__main__ import _fixture_providers, build_context
+    cfg = settings.load()
+    now = dt.datetime.now()
+    ctx = build_context(cfg, _fixture_providers(cfg), now)
+    assert ctx.events
+    assert ctx.meals[now.date()] == ["Crispy Gnocchi With Tomato and Red Onion",
+                                     "Fast Oven Barbecue Chicken"]

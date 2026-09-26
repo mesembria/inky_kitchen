@@ -9,6 +9,7 @@ into the inclusive last day the agenda draws.
 import datetime as dt
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass
 from typing import Optional
@@ -159,3 +160,44 @@ class IcsFeed:
                 return f.read()
         except OSError:
             return None
+
+
+ANCHOR = dt.date(2026, 1, 1)
+_DATED = ("DTSTART", "DTEND", "EXDATE", "RECURRENCE-ID")
+_DATE_TOKEN = re.compile(r"\d{8}(?=T|,|$)")
+
+
+def shift_dates(text, days):
+    """Move every date in DTSTART/DTEND/EXDATE/RECURRENCE-ID by `days`.
+
+    Fixtures are written against ANCHOR so they read as a fixed week; shifting
+    them to today at load means --fixture never shows an empty, aged-out
+    agenda. Nothing else is touched (use COUNT, not UNTIL, in fixture rules).
+    """
+    delta = dt.timedelta(days=days)
+
+    def move(m):
+        day = dt.datetime.strptime(m.group(0), "%Y%m%d").date() + delta
+        return day.strftime("%Y%m%d")
+
+    out = []
+    for line in text.splitlines():
+        head, sep, value = line.partition(":")
+        if sep and head.split(";", 1)[0] in _DATED:
+            line = head + ":" + _DATE_TOKEN.sub(move, value)
+        out.append(line)
+    return "\n".join(out) + "\n"
+
+
+class FixtureFeed:
+    """A bundled ICS file with ANCHOR moved to today. Same text() as IcsFeed,
+    so --fixture exercises the real parser."""
+
+    def __init__(self, path, today=dt.date.today):
+        self.path = path
+        self._today = today
+
+    def text(self):
+        with open(self.path, encoding="utf-8") as f:
+            raw = f.read()
+        return shift_dates(raw, (self._today() - ANCHOR).days)

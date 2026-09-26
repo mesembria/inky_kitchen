@@ -14,3 +14,4 @@ inky_weather/assets/icons/
 .DS_Store
 kitchen_display/config.py
 kitchen_display/last_display.png
+kitchen_display/cache/

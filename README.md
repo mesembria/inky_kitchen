@@ -43,8 +43,17 @@ weather view (`inky_weather/`, unchanged). Design and plans are in
 
 - `inky_weather/config.py` — Google Weather key, lat/long, location name
   (copy from `inky_weather/config.example.py`).
-- `kitchen_display/config.py` — optional; overrides the refresh timings in
-  `kitchen_display/config_example.py`.
+- `kitchen_display/config.py` — optional; overrides anything in
+  `kitchen_display/config_example.py`: refresh timings, and the two calendar
+  feeds. The feed URLs are secrets (anyone holding one can read the calendar):
+  - `calendar_ics_url` — Google Calendar → Settings → "Colorado Davis Moore
+    Family Calendar" → Integrate calendar → **Secret address in iCal format**.
+  - `meals_ics_url` — AnyList → Meal Plan → Settings → calendar feed URL.
+
+  Leave either unset and that block stays empty. After editing on the Pi,
+  long-press D; the version string in the header confirms the restart. The
+  last good copy of each feed is kept in `kitchen_display/cache/` and used for
+  up to `ics_max_age_s` (24h) when a fetch fails.
 
 Both are gitignored.
 

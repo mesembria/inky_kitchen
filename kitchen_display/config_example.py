@@ -11,4 +11,9 @@ config = {
     "long_press_s": 2.0,
     "debounce_s": 0.2,
     "daily_restart_hour": 4,              # exit 0 at ~04:00 so run.sh pulls updates
+    "timezone": "America/Denver",
+    # Secrets — set these in config.py, never here. Unset leaves the block empty.
+    "calendar_ics_url": None,   # Google Calendar: Settings → the calendar → Secret address in iCal format
+    "meals_ics_url": None,      # AnyList: Meal Plan → Settings → calendar feed URL
+    "ics_max_age_s": 24 * 60 * 60,   # use the last good copy this long when a fetch fails
 }

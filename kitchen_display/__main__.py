@@ -5,6 +5,7 @@ import os
 import queue
 import sys
 import threading
+from zoneinfo import ZoneInfo
 
 from inky_weather import version
 
@@ -12,30 +13,51 @@ from . import manager, settings
 from .hw import buttons as buttons_mod
 from .hw import panel as panel_mod
 from .hw import presence as presence_mod
-from .providers import base, forecast
+from .providers import base, calendar, forecast, ics
 from .views import registry
 
 CACHE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "last_display.png")
 RUN_SH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "run.sh")
+ICS_CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache")
+FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
+
+
+def _calendar_providers(cfg):
+    """Real ICS providers for each URL that is set; Null for the rest."""
+    tz = ZoneInfo(cfg.get("timezone", "America/Denver"))
+
+    def feed(key, name):
+        url = cfg.get(key)
+        if not url:
+            return None
+        return ics.IcsFeed(url, os.path.join(ICS_CACHE_DIR, name),
+                           max_age_s=cfg.get("ics_max_age_s", 24 * 3600))
+
+    events, meals = feed("calendar_ics_url", "events.ics"), feed("meals_ics_url", "meals.ics")
+    return {"events": calendar.IcsEvents(events, tz) if events else base.NullEvents(),
+            "meals": calendar.IcsMeals(meals, tz) if meals else base.NullMeals()}
 
 
 def _live_providers(cfg):
-    """Live feeds, or fixtures if the weather app has no config.py yet —
-    a missing key should degrade the panel, not stop the daemon booting."""
+    """Live feeds. A missing weather config.py falls back to the fixture
+    forecast — a missing key should degrade the panel, not stop the daemon
+    booting — but the calendar stays live: fake events on the wall would lie."""
     try:
         from inky_weather.config import config as wx_cfg
+        fc = forecast.ForecastProvider(wx_cfg)
     except ImportError:
-        logging.warning("inky_weather/config.py missing; falling back to fixtures")
-        return _fixture_providers()
-    return {"forecast": forecast.ForecastProvider(wx_cfg),
-            "events": base.NullEvents(),
-            "meals": base.NullMeals()}
+        logging.warning("inky_weather/config.py missing; using the fixture forecast")
+        fc = forecast.FixtureForecastProvider()
+    return {"forecast": fc, **_calendar_providers(cfg)}
 
 
-def _fixture_providers():
+def _fixture_providers(cfg=None):
+    tz = ZoneInfo((cfg or {}).get("timezone", "America/Denver"))
     return {"forecast": forecast.FixtureForecastProvider(),
-            "events": base.NullEvents(),
-            "meals": base.NullMeals()}
+            "events": calendar.IcsEvents(
+                ics.FixtureFeed(os.path.join(FIXTURES, "events.ics")), tz),
+            "meals": calendar.IcsMeals(
+                ics.FixtureFeed(os.path.join(FIXTURES, "meals.ics")), tz)}
 
 
 def build_context(cfg, providers, now):
@@ -85,7 +107,7 @@ def main(argv=None):
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s")
     cfg = settings.load()
-    providers = _fixture_providers() if args.fixture else _live_providers(cfg)
+    providers = _fixture_providers(cfg) if args.fixture else _live_providers(cfg)
     renderer = make_renderer(cfg, providers)
 
     if args.out:
