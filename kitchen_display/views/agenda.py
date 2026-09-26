@@ -123,6 +123,19 @@ def fit_text(text, font, max_px):
     return out + "…" if out else ""
 
 
+def visible(items, cap):
+    """(shown, hidden) for a space `cap` lines tall.
+
+    When something has to be cut, one line is given up to a "+N more" marker
+    so nothing vanishes silently. At one line there is no line to give, so
+    the first item stays and the count rides beside it.
+    """
+    if len(items) <= cap:
+        return list(items), 0
+    keep = max(cap - 1, 1)
+    return list(items[:keep]), len(items) - keep
+
+
 def render(draw, x, y, w, h, rows):
     """Draw the agenda inside the box at (x, y, w, h)."""
     day_font = wr.display_font(19, 600)
@@ -148,8 +161,12 @@ def render(draw, x, y, w, h, rows):
             draw.text((text_x, top), "—", font=quiet_font, fill=wr.INK)
             continue
 
+        shown, hidden = visible(row.items, slot.max_items)
+        inline = f"+{hidden}" if hidden and slot.max_items == 1 else ""
+        inline_w = quiet_font.getlength(inline) + 6 if inline else 0
+
         iy = top
-        for item in row.items[:slot.max_items]:
+        for item in shown:
             tx = text_x
             if item.all_day:
                 tag = "ALL DAY"
@@ -161,7 +178,11 @@ def render(draw, x, y, w, h, rows):
             elif item.time_label:
                 draw.text((tx, iy), item.time_label, font=time_font, fill=wr.INK)
                 tx += time_font.getlength(item.time_label) + 6
-            avail = text_w - (tx - text_x)
+            avail = text_w - (tx - text_x) - inline_w
             draw.text((tx, iy), fit_text(item.title, item_font, avail),
                       font=item_font, fill=wr.INK)
             iy += LINE_H
+        if inline:
+            draw.text((x + w, top), inline, font=quiet_font, fill=wr.INK, anchor="ra")
+        elif hidden:
+            draw.text((text_x, iy), f"+{hidden} more", font=quiet_font, fill=wr.INK)

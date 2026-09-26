@@ -171,3 +171,57 @@ def test_continuation_day_sorts_ahead_of_that_days_timed_events():
 def test_end_date_none_means_one_day():
     rows = agenda.day_rows([_ev(MON, 9, "Soccer")], MON, 7, today=MON)
     assert _titles(rows)[:2] == [["Soccer"], []]
+
+
+class _Recorder:
+    """Pass-through ImageDraw that remembers every string drawn."""
+
+    def __init__(self, draw):
+        self._d = draw
+        self.texts = []
+
+    def text(self, xy, text, **kw):
+        self.texts.append(text)
+        return self._d.text(xy, text, **kw)
+
+    def __getattr__(self, name):
+        return getattr(self._d, name)
+
+
+def _render_texts(counts, h):
+    img = Image.new("RGB", (800, 480), wrender.PAPER)
+    rec = _Recorder(ImageDraw.Draw(img))
+    rows = _busy(agenda.day_rows([], MON, 7, today=MON), counts)
+    agenda.render(rec, 290, 52, 492, h, rows)
+    return rec.texts, agenda.layout(rows, h)
+
+
+def test_visible_keeps_everything_that_fits():
+    assert agenda.visible(["a", "b"], 3) == (["a", "b"], 0)
+
+
+def test_visible_gives_up_one_line_to_the_marker():
+    assert agenda.visible(["a", "b", "c", "d", "e"], 3) == (["a", "b"], 3)
+
+
+def test_visible_at_one_line_keeps_the_first_item():
+    assert agenda.visible(["a", "b", "c"], 1) == (["a"], 2)
+
+
+def test_an_overflowing_day_says_how_many_it_hid():
+    texts, slots = _render_texts([5] * 7, 410)
+    assert slots[0].max_items == 2
+    assert texts.count("+4 more") == 7
+    assert "Event 1" not in texts
+
+
+def test_at_one_line_per_day_the_count_rides_on_the_same_line():
+    texts, slots = _render_texts([5] * 7, 7 * (agenda.DAY_LABEL_H + agenda.ROW_PAD))
+    assert slots[0].max_items == 1
+    assert texts.count("+4") == 7
+    assert "+4 more" not in texts
+
+
+def test_a_day_that_fits_shows_no_marker():
+    texts, _ = _render_texts([2] * 7, 410)
+    assert not any(t.startswith("+") for t in texts)
