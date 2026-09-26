@@ -14,11 +14,12 @@ log = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class Event:
-    start: Optional[dt.datetime]     # None for all-day
+    start: Optional[dt.datetime]     # None for all-day; naive local time
     end: Optional[dt.datetime]
     title: str
     all_day: bool = False
-    date: Optional[dt.date] = None   # the day an all-day event belongs to
+    date: Optional[dt.date] = None   # the day an all-day event starts
+    end_date: Optional[dt.date] = None  # last day covered, inclusive; None = one day
 
 
 @dataclass(frozen=True)
@@ -44,7 +45,7 @@ class Context:
     forecast: Optional[Forecast] = None
     now_wx: Optional[NowWeather] = None
     events: Optional[list] = None
-    meals: Optional[dict] = None
+    meals: Optional[dict] = None     # {date: [title, ...]}, feed order
 
 
 def safe(fn, default=None):
