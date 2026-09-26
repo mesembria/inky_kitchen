@@ -116,3 +116,58 @@ def test_an_overfull_week_caps_items_per_day_so_everything_fits():
     slots = agenda.layout(rows, 410)
     assert slots[-1].top + slots[-1].height <= 410
     assert all(s.max_items >= 1 for s in slots)
+
+
+FRI = MON + dt.timedelta(days=4)
+
+
+def _titles(rows):
+    return [[i.title for i in r.items] for r in rows]
+
+
+def test_multi_day_all_day_event_shows_on_every_day_it_covers():
+    ev = Event(start=None, end=None, title="Grandparents", all_day=True,
+               date=FRI, end_date=FRI + dt.timedelta(days=2))
+    rows = agenda.day_rows([ev], MON, 7, today=MON)
+    assert _titles(rows) == [[], [], [], [], ["Grandparents"], ["Grandparents"],
+                             ["Grandparents"]]
+
+
+def test_timed_multi_day_event_shows_its_time_once_then_reads_all_day():
+    start = dt.datetime.combine(FRI, dt.time(17))
+    ev = Event(start=start, end=start + dt.timedelta(hours=46), title="Camping",
+               end_date=FRI + dt.timedelta(days=2))
+    rows = agenda.day_rows([ev], MON, 7, today=MON)
+    fri, sat, sun = rows[4].items[0], rows[5].items[0], rows[6].items[0]
+    assert (fri.time_label, fri.all_day) == ("5:00p", False)
+    assert (sat.time_label, sat.all_day) == (None, True)
+    assert (sun.time_label, sun.all_day) == (None, True)
+
+
+def test_event_that_began_before_the_window_shows_on_the_days_it_still_covers():
+    ev = Event(start=None, end=None, title="Trip", all_day=True,
+               date=MON - dt.timedelta(days=3), end_date=MON + dt.timedelta(days=1))
+    rows = agenda.day_rows([ev], MON, 7, today=MON)
+    assert _titles(rows)[:3] == [["Trip"], ["Trip"], []]
+
+
+def test_event_running_past_the_window_is_clipped():
+    ev = Event(start=None, end=None, title="Break", all_day=True,
+               date=MON + dt.timedelta(days=5), end_date=MON + dt.timedelta(days=12))
+    rows = agenda.day_rows([ev], MON, 7, today=MON)
+    assert len(rows) == 7
+    assert _titles(rows)[5:] == [["Break"], ["Break"]]
+
+
+def test_continuation_day_sorts_ahead_of_that_days_timed_events():
+    start = dt.datetime.combine(FRI, dt.time(17))
+    trip = Event(start=start, end=start + dt.timedelta(days=1), title="Trip",
+                 end_date=FRI + dt.timedelta(days=1))
+    rows = agenda.day_rows([_ev(FRI + dt.timedelta(days=1), 9, "Soccer"), trip],
+                           MON, 7, today=MON)
+    assert _titles(rows)[5] == ["Trip", "Soccer"]
+
+
+def test_end_date_none_means_one_day():
+    rows = agenda.day_rows([_ev(MON, 9, "Soccer")], MON, 7, today=MON)
+    assert _titles(rows)[:2] == [["Soccer"], []]

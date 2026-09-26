@@ -46,8 +46,9 @@ def _time_label(when):
 def day_rows(events, start_date, days, today):
     """Group events into one row per day, starting at start_date.
 
-    An all-day event carries no start time, so it is placed by its `date`
-    field instead.
+    An event lands on every day from its first through its end_date. A timed
+    event shows its start time on its first day only; on the days it runs on
+    into, it reads as all-day, since "5:00p" on Saturday would be a lie.
     """
     rows = []
     for i in range(days):
@@ -60,19 +61,28 @@ def day_rows(events, start_date, days, today):
             is_weekend=date.weekday() >= 5,
         ))
     by_date = {r.date: r for r in rows}
-    # Sort on the real start time, never the display label: as strings,
-    # '4:00p' sorts before '9:00a'. All-day events lead their day.
-    ordered = sorted(events or [], key=lambda e: (
-        not e.all_day, e.start or dt.datetime.min))
-    for ev in ordered:
-        date = ev.date if ev.all_day else (ev.start.date() if ev.start else None)
-        row = by_date.get(date)
-        if row is None:
+    last_row = start_date + dt.timedelta(days=days - 1)
+
+    placed = []
+    for ev in events or []:
+        first = ev.date if ev.all_day else (ev.start.date() if ev.start else None)
+        if first is None:
             continue
-        row.items.append(Item(
-            time_label=None if ev.all_day else _time_label(ev.start),
-            title=ev.title or "",
-            all_day=ev.all_day))
+        last = max(first, ev.end_date or first)
+        day = max(first, start_date)
+        while day <= min(last, last_row):
+            all_day = ev.all_day or day != first
+            # Sort on the real start time, never the display label: as
+            # strings, '4:00p' sorts before '9:00a'. All-day items lead.
+            key = (day, not all_day, dt.datetime.min if all_day else ev.start)
+            placed.append((key, Item(
+                time_label=None if all_day else _time_label(ev.start),
+                title=ev.title or "",
+                all_day=all_day)))
+            day += dt.timedelta(days=1)
+
+    for key, item in sorted(placed, key=lambda p: p[0]):
+        by_date[key[0]].items.append(item)
     return rows
 
 
