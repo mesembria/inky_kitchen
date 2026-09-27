@@ -1,7 +1,7 @@
 # Kitchen Display
 
 Pi Zero 2 W driving a 7-colour Inky Impression e-ink panel in the kitchen: glance
-(weather rail + 7-day agenda + dinner), next week, weather. README covers setup.
+(12-hour forecast rail + 7-day agenda), next week, weather. README covers setup.
 
 ## Working on the Mac
 - Tests: `.venv/bin/python -m pytest -q`.
@@ -13,7 +13,7 @@ Pi Zero 2 W driving a 7-colour Inky Impression e-ink panel in the kitchen: glanc
 
 ## Rules that aren't visible in the code
 - Views receive naive local datetimes; time zones live only in `providers/ics.py`.
-- Calendar and meal ICS URLs are secrets: they exist only in the gitignored
+- The calendar ICS URL is a secret: it exists only in the gitignored
   `kitchen_display/config.py`. Logs name the feed (`events.ics`), never the URL.
 - Specs and plans: `docs/superpowers/specs/` and `docs/superpowers/plans/`.
 

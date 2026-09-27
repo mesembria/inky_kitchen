@@ -1,8 +1,7 @@
 # Kitchen Display
 
 A wall dashboard for the kitchen on a Pimoroni Inky Impression 7.3". The resting
-view shows the weather now and for the next few hours, the family's week, and
-what's for dinner. The rear buttons switch views. It refreshes hourly, holds the
+view shows the next twelve hours of weather and the family's week. The rear buttons switch views. It refreshes hourly, holds the
 refresh while someone is in the room (once the presence sensor lands), and never
 shows a blank or silently wrong panel: a failed fetch re-shows the last good image
 marked STALE.
@@ -44,15 +43,14 @@ weather view (`inky_weather/`, unchanged). Design and plans are in
 - `inky_weather/config.py` — Google Weather key, lat/long, location name
   (copy from `inky_weather/config.example.py`).
 - `kitchen_display/config.py` — optional; overrides anything in
-  `kitchen_display/config_example.py`: refresh timings, and the two calendar
-  feeds. The feed URLs are secrets (anyone holding one can read the calendar):
+  `kitchen_display/config_example.py`: refresh timings, and the calendar feed.
+  The feed URL is a secret (anyone holding it can read the calendar):
   - `calendar_ics_url` — Google Calendar → Settings → "Colorado Davis Moore
     Family Calendar" → Integrate calendar → **Secret address in iCal format**.
-  - `meals_ics_url` — AnyList → Meal Plan → Settings → calendar feed URL.
 
-  Leave either unset and that block stays empty. After editing on the Pi,
+  Leave it unset and the agenda says so. After editing on the Pi,
   long-press D; the version string in the header confirms the restart. The
-  last good copy of each feed is kept in `kitchen_display/cache/` and used for
+  last good copy of the feed is kept in `kitchen_display/cache/` and used for
   up to `ics_max_age_s` (24h) when a fetch fails.
 
 Both are gitignored.

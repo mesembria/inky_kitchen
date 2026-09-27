@@ -1,7 +1,6 @@
 """ICS feeds: expand a calendar into the concrete occurrences in a window.
 
-Both the family calendar and the AnyList meal plan arrive as secret ICS URLs,
-so this module is the only place that knows ICS exists. Recurrence (RRULE,
+The family calendar arrives as a secret ICS URL, so this module is the only place that knows ICS exists. Recurrence (RRULE,
 EXDATE, moved instances, DST) is recurring-ical-events' job; ours is keeping
 one bad entry from costing the whole feed, and turning ICS's exclusive ends
 into the inclusive last day the agenda draws.

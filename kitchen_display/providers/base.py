@@ -23,14 +23,6 @@ class Event:
 
 
 @dataclass(frozen=True)
-class NowWeather:
-    temp_f: int
-    feels_f: int
-    condition: str
-    icon_uri: str = ""
-
-
-@dataclass(frozen=True)
 class Forecast:
     hours: list
     days: list
@@ -43,9 +35,7 @@ class Context:
     version: str
     location_name: str
     forecast: Optional[Forecast] = None
-    now_wx: Optional[NowWeather] = None
     events: Optional[list] = None
-    meals: Optional[dict] = None     # {date: [title, ...]}, feed order
 
 
 def safe(fn, default=None):
@@ -60,13 +50,6 @@ def safe(fn, default=None):
 
 class NullEvents:
     """Stands in until the calendar slice lands."""
-
-    def fetch(self, start_date, days):
-        return None
-
-
-class NullMeals:
-    """Stands in until the meal-plan slice lands."""
 
     def fetch(self, start_date, days):
         return None

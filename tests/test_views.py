@@ -12,7 +12,7 @@ NOW = dt.datetime(2026, 9, 21, 20, 0)
 def _ctx(**kw):
     f = fc.FixtureForecastProvider().fetch()
     base = dict(now=NOW, version="abc1234", location_name="Lafayette, CO",
-                forecast=f, now_wx=fc.now_from(f), events=None, meals=None)
+                forecast=f, events=None)
     base.update(kw)
     return Context(**base)
 

@@ -87,7 +87,7 @@ GRAPH_H = HEIGHT - GRAPH_Y - 8
 BAND_OUT = (213, 220, 240)
 BAND_IN = (178, 190, 224)
 
-_KIND_BAR = {"storm": RED, "snow": PURPLE, "mix": PURPLE, "rain": BLUE, "dry": BLUE}
+_KIND_BAR = {"storm": RED, "snow": COLOR_SNOW, "mix": COLOR_MIX, "rain": BLUE, "dry": BLUE}
 
 # Precip probability buckets (lower bound of each non-dry tier), NWS-style:
 # dry <5, slight 5-24, chance 25-54, likely 55-79, definite 80+.

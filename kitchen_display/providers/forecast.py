@@ -4,7 +4,7 @@ import os
 
 from inky_weather import weather
 
-from .base import Forecast, NowWeather, safe
+from .base import Forecast, safe
 
 FIXTURE_DIR = os.path.join(os.path.dirname(os.path.dirname(
     os.path.dirname(os.path.abspath(__file__)))), "inky_weather", "fixtures")
@@ -37,15 +37,3 @@ class FixtureForecastProvider:
                             sun={"sunrise": "6a", "sunset": "7p"})
         return safe(_go)
 
-
-def now_from(forecast):
-    """Derive a 'now' reading from the first forecast hour.
-
-    The Home Assistant slice replaces this with the station's own sun-corrected
-    temperature; until then the forecast's current hour is the honest answer.
-    """
-    if forecast is None or not forecast.hours:
-        return None
-    h = forecast.hours[0]
-    return NowWeather(temp_f=h["temp_f"], feels_f=h.get("feels_f", h["temp_f"]),
-                      condition=h.get("condition", ""), icon_uri=h.get("icon_uri", ""))

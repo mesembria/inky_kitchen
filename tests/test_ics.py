@@ -267,15 +267,6 @@ def test_fixture_events_land_relative_to_today():
     assert late.end_date == late.start_date                      # midnight end
 
 
-def test_fixture_meals_have_a_two_meal_night_today():
-    today = dt.date(2026, 9, 26)
-    feed = ics.FixtureFeed(os.path.join(FIXTURES, "meals.ics"), today=lambda: today)
-    titles = [o.title for o in ics.occurrences(feed.text(), today,
-                                               today + dt.timedelta(days=1), TZ)]
-    assert titles == ["Crispy Gnocchi With Tomato and Red Onion",
-                      "Fast Oven Barbecue Chicken"]
-
-
 def test_utc_recurring_event_keeps_wall_time_via_x_wr_timezone():
     # Google feeds anchor some series in UTC and name the zone in the
     # calendar-level X-WR-TIMEZONE. Splitting the feed per series must keep

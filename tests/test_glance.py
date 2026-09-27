@@ -10,14 +10,14 @@ NOW = dt.datetime(2026, 9, 21, 20, 0)
 def _ctx(**kw):
     f = fc.FixtureForecastProvider().fetch()
     base = dict(now=NOW, version="abc1234", location_name="Lafayette, CO",
-                forecast=f, now_wx=fc.now_from(f), events=None, meals=None)
+                forecast=f, events=None)
     base.update(kw)
     return Context(**base)
 
 
-def test_hourly_slice_returns_six_hours():
+def test_hourly_slice_defaults_to_twelve_hours():
     f = fc.FixtureForecastProvider().fetch()
-    assert len(glance.hourly_slice(f, count=6)) == 6
+    assert len(glance.hourly_slice(f)) == 12
 
 
 def test_hourly_slice_survives_a_short_forecast():
@@ -32,95 +32,34 @@ def test_hourly_slice_of_none_is_empty():
     assert glance.hourly_slice(None) == []
 
 
-def test_dinner_lines_when_tonight_is_planned():
-    meals = {dt.date(2026, 9, 21): ["Chicken tikka masala"],
-             dt.date(2026, 9, 22): ["Pasta with Garlicky Broccoli"]}
-    tonight, label, nxt = glance.dinner_lines(meals, dt.date(2026, 9, 21))
-    assert tonight == ["Chicken tikka masala"]
-    assert (label, nxt) == ("Tomorrow", ["Pasta with Garlicky Broccoli"])
+def test_bar_ends_give_the_warmest_hour_the_full_bar():
+    ends = glance.bar_ends([60, 70, 80], 100, 200)
+    assert ends == [120, 160, 200]
 
 
-def test_dinner_lines_when_tonight_is_empty_shows_the_next_planned_meal():
-    meals = {dt.date(2026, 9, 24): ["Chicken And Couscous With Chickpeas"]}
-    tonight, label, nxt = glance.dinner_lines(meals, dt.date(2026, 9, 21))
-    assert tonight == []
-    assert label == "Thu"
-    assert nxt == ["Chicken And Couscous With Chickpeas"]
+def test_bar_ends_keep_a_stub_for_the_coldest_hour():
+    assert min(glance.bar_ends([20, 90], 100, 200)) > 100
 
 
-def test_dinner_lines_keeps_both_meals_of_a_two_meal_night():
-    meals = {dt.date(2026, 9, 21): ["Crispy Gnocchi", "Fast Oven Barbecue Chicken"]}
-    tonight, _, _ = glance.dinner_lines(meals, dt.date(2026, 9, 21))
-    assert tonight == ["Crispy Gnocchi", "Fast Oven Barbecue Chicken"]
+def test_bar_ends_keep_a_flat_day_level():
+    # A 2° wobble must not swing the bars across the whole range.
+    ends = glance.bar_ends([70, 72], 100, 200)
+    assert ends[1] - ends[0] <= 20
 
 
-def test_dinner_lines_skips_a_future_day_with_an_empty_list():
-    meals = {dt.date(2026, 9, 22): [], dt.date(2026, 9, 23): ["Tacos"]}
-    _, label, nxt = glance.dinner_lines(meals, dt.date(2026, 9, 21))
-    assert (label, nxt) == ("Wed", ["Tacos"])
+def test_bar_ends_of_a_constant_day_do_not_divide_by_zero():
+    assert glance.bar_ends([70, 70], 100, 200) == [160, 160]
 
 
-def test_dinner_lines_with_no_meal_provider_is_empty():
-    assert glance.dinner_lines(None, dt.date(2026, 9, 21)) == ([], None, [])
-
-
-class _Recorder:
-    def __init__(self, draw):
-        self._d = draw
-        self.texts = []
-
-    def text(self, xy, text, **kw):
-        self.texts.append(text)
-        return self._d.text(xy, text, **kw)
-
-    def __getattr__(self, name):
-        return getattr(self._d, name)
-
-
-def _rail_texts(meals, monkeypatch):
-    """Render the glance, recording every string its own Draw object drew."""
-    from PIL import ImageDraw
-    recs = []
-    real = ImageDraw.Draw
-
-    def recording(img):
-        rec = _Recorder(real(img))
-        recs.append(rec)
-        return rec
-
-    monkeypatch.setattr(glance.ImageDraw, "Draw", recording)
-    img = glance.render(_ctx(meals=meals))
-    return img, recs[0].texts
-
-
-def test_two_meals_tonight_are_both_drawn(monkeypatch):
-    today = NOW.date()
-    _, texts = _rail_texts({today: ["Crispy Gnocchi", "Barbecue Chicken"],
-                            today + dt.timedelta(days=1): ["Tacos"]}, monkeypatch)
-    assert "Crispy Gnocchi" in texts and "Barbecue Chicken" in texts
-    assert "Tacos" in texts
-
-
-def test_three_meals_tonight_show_one_and_a_count(monkeypatch):
-    today = NOW.date()
-    _, texts = _rail_texts({today: ["A", "B", "C"]}, monkeypatch)
-    assert "A" in texts and "+2 more" in texts and "B" not in texts
-
-
-def test_next_planned_day_with_two_meals_shows_the_first_and_a_count(monkeypatch):
-    today = NOW.date()
-    _, texts = _rail_texts({today + dt.timedelta(days=1): ["Tacos", "Salad"]},
-                           monkeypatch)
-    assert "Tacos +1" in texts
-
-
-def test_a_two_meal_night_stays_above_the_bottom_margin(monkeypatch):
+def test_the_warmest_label_clears_the_precip_meter():
     from inky_weather import render as wr
-    today = NOW.date()
-    img, _ = _rail_texts({today: ["Crispy Gnocchi With Tomato and Red Onion",
-                                  "Fast Oven Barbecue Chicken"],
-                          today + dt.timedelta(days=1): ["Skillet Chili Mac", "Salad"]},
-                         monkeypatch)
+    width = wr.display_font(18, 600).getlength("100°")
+    assert glance.BAR_X1 + 4 + width < glance.METER_X
+
+
+def test_the_forecast_stays_above_the_bottom_margin():
+    from inky_weather import render as wr
+    img = glance.render(_ctx())
     for y in range(wr.HEIGHT - 17, wr.HEIGHT):
         for x in range(glance.RAIL_X, glance.RAIL_X + glance.RAIL_W):
             assert img.getpixel((x, y)) == wr.PAPER, (x, y)
@@ -138,7 +77,7 @@ def test_render_without_calendar_says_so_and_still_draws():
 
 
 def test_render_without_any_forecast_still_draws():
-    img = glance.render(_ctx(forecast=None, now_wx=None))
+    img = glance.render(_ctx(forecast=None))
     assert img.size == (800, 480)
 
 

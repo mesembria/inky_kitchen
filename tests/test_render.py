@@ -191,7 +191,7 @@ def _band_color_count(hours, colors):
 def test_precip_meter_absent_when_dry():
     # All hours below the dry threshold -> no meter pixels, whatever the color.
     count = _band_color_count(_graph_hours(0),
-                              (render.BLUE, render.RED, render.PURPLE))
+                              (render.BLUE, render.RED, render.GREEN))
     assert count == 0
 
 

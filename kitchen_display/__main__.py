@@ -23,7 +23,7 @@ FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
 
 
 def _calendar_providers(cfg):
-    """Real ICS providers for each URL that is set; Null for the rest."""
+    """A real ICS provider when the calendar URL is set; Null otherwise."""
     tz = ZoneInfo(cfg.get("timezone", "America/Denver"))
 
     def feed(key, name):
@@ -33,9 +33,8 @@ def _calendar_providers(cfg):
         return ics.IcsFeed(url, os.path.join(ICS_CACHE_DIR, name),
                            max_age_s=cfg.get("ics_max_age_s", 24 * 3600))
 
-    events, meals = feed("calendar_ics_url", "events.ics"), feed("meals_ics_url", "meals.ics")
-    return {"events": calendar.IcsEvents(events, tz) if events else base.NullEvents(),
-            "meals": calendar.IcsMeals(meals, tz) if meals else base.NullMeals()}
+    events = feed("calendar_ics_url", "events.ics")
+    return {"events": calendar.IcsEvents(events, tz) if events else base.NullEvents()}
 
 
 def _live_providers(cfg):
@@ -55,9 +54,7 @@ def _fixture_providers(cfg=None):
     tz = ZoneInfo((cfg or {}).get("timezone", "America/Denver"))
     return {"forecast": forecast.FixtureForecastProvider(),
             "events": calendar.IcsEvents(
-                ics.FixtureFeed(os.path.join(FIXTURES, "events.ics")), tz),
-            "meals": calendar.IcsMeals(
-                ics.FixtureFeed(os.path.join(FIXTURES, "meals.ics")), tz)}
+                ics.FixtureFeed(os.path.join(FIXTURES, "events.ics")), tz)}
 
 
 def build_context(cfg, providers, now):
@@ -69,9 +66,7 @@ def build_context(cfg, providers, now):
         version=version.get_version(),
         location_name=cfg.get("location_name", ""),
         forecast=fc,
-        now_wx=base.safe(lambda: forecast.now_from(fc)),
         events=base.safe(lambda: providers["events"].fetch(now.date(), 14)),
-        meals=base.safe(lambda: providers["meals"].fetch(now.date(), 14)),
     )
 
 
@@ -82,7 +77,7 @@ def make_renderer(cfg, providers):
             return registry.render(view_name, base.Context(
                 now=now, version="", location_name=cfg.get("location_name", "")))
         ctx = build_context(cfg, providers, now)
-        if ctx.forecast is None and ctx.events is None and ctx.meals is None:
+        if ctx.forecast is None and ctx.events is None:
             # Every feed is dead. Rendering now would put up an empty panel
             # headed "updated <now>" and overwrite the last good image; raise so
             # the manager re-shows that image marked STALE instead.
