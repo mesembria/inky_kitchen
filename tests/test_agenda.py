@@ -225,3 +225,38 @@ def test_at_one_line_per_day_the_count_rides_on_the_same_line():
 def test_a_day_that_fits_shows_no_marker():
     texts, _ = _render_texts([2] * 7, 410)
     assert not any(t.startswith("+") for t in texts)
+
+
+def _all_day_tag_pixels():
+    """Render one all-day row; return (box rows, box cols, label ink rows,
+    label ink cols, title cap rows), all in image coordinates."""
+    img = Image.new("RGB", (800, 480), wrender.PAPER)
+    ev = Event(start=None, end=None, title="Grandparents visiting", all_day=True, date=MON)
+    x, y = 290, 52
+    agenda.render(ImageDraw.Draw(img), x, y, 492, 410,
+                  agenda.day_rows([ev], MON, 7, today=MON))
+    tx = x + agenda.DAY_COL_W + agenda.TIME_GAP
+    ink = lambda px, py: img.getpixel((px, py)) != wrender.PAPER
+    rows = [py for py in range(y, y + 40) if ink(tx, py)]          # left border
+    top, bottom = rows[0], rows[-1]
+    right = tx                                                      # top border run
+    while ink(right + 1, top):
+        right += 1
+    inner = [(px, py) for px in range(tx + 2, right - 1)
+             for py in range(top + 2, bottom - 1) if ink(px, py)]
+    label_rows = (min(p[1] for p in inner), max(p[1] for p in inner))
+    label_cols = (min(p[0] for p in inner), max(p[0] for p in inner))
+    cap = wrender.display_font(19, 400).getbbox("H")
+    return (top, bottom), (tx, right), label_rows, label_cols, (y + cap[1], y + cap[3] - 1)
+
+
+def test_all_day_tag_is_centred_on_the_titles_capitals():
+    (top, bottom), _, _, _, (cap_top, cap_bottom) = _all_day_tag_pixels()
+    assert abs((top + bottom) / 2 - (cap_top + cap_bottom) / 2) <= 1
+
+
+def test_all_day_label_has_room_inside_its_box():
+    (top, bottom), (left, right), (lt, lb), (ll, lr), _ = _all_day_tag_pixels()
+    border = 2
+    assert lt - (top + border) >= 2 and (bottom - border) - lb >= 2
+    assert ll - (left + border) >= 2 and (right - border) - lr >= 2

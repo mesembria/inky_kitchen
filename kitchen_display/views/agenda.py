@@ -19,6 +19,9 @@ LINE_H = 23          # one event line
 DAY_LABEL_H = 36     # day name + date sublabel
 ROW_PAD = 8          # breathing room under each row
 MAX_ITEMS = 3
+TAG_H = 20           # ALL DAY box, a touch taller than the title's capitals
+TAG_PAD_X = 5        # paper between the label and each side of the border
+TAG_BORDER = 2
 
 
 @dataclass(frozen=True)
@@ -136,6 +139,24 @@ def visible(items, cap):
     return list(items[:keep]), len(items) - keep
 
 
+def _all_day_tag(draw, x, mid_y):
+    """Draw the boxed ALL DAY tag centred on mid_y; return its width.
+
+    Placed from the label's measured ink rather than font metrics, which
+    carry ascender space and would sit the box high on the line.
+    """
+    font = wr.display_font(11, 600)
+    label = "ALL DAY"
+    left, top, right, bottom = font.getbbox(label)
+    width = (right - left) + 2 * (TAG_BORDER + TAG_PAD_X)
+    box_top = round(mid_y - TAG_H / 2)
+    draw.rectangle([x, box_top, x + width - 1, box_top + TAG_H - 1],
+                   outline=wr.INK, width=TAG_BORDER)
+    draw.text((x + TAG_BORDER + TAG_PAD_X - left, round(mid_y - (top + bottom) / 2)),
+              label, font=font, fill=wr.INK)
+    return width
+
+
 def render(draw, x, y, w, h, rows):
     """Draw the agenda inside the box at (x, y, w, h)."""
     day_font = wr.display_font(19, 600)
@@ -145,6 +166,8 @@ def render(draw, x, y, w, h, rows):
     quiet_font = wr.display_font(19, 300)
 
     text_x = x + DAY_COL_W + TIME_GAP
+    cap = item_font.getbbox("H")
+    cap_mid = (cap[1] + cap[3] - 1) / 2     # centre of the title's capitals
     text_w = w - DAY_COL_W - TIME_GAP
 
     for i, (row, slot) in enumerate(zip(rows, layout(rows, h))):
@@ -169,12 +192,7 @@ def render(draw, x, y, w, h, rows):
         for item in shown:
             tx = text_x
             if item.all_day:
-                tag = "ALL DAY"
-                tag_font = wr.display_font(11, 600)
-                tw = tag_font.getlength(tag) + 8
-                draw.rectangle([tx, iy + 3, tx + tw, iy + 17], outline=wr.INK, width=2)
-                draw.text((tx + 4, iy + 3), tag, font=tag_font, fill=wr.INK)
-                tx += tw + 6
+                tx += _all_day_tag(draw, tx, iy + cap_mid) + 6
             elif item.time_label:
                 draw.text((tx, iy), item.time_label, font=time_font, fill=wr.INK)
                 tx += time_font.getlength(item.time_label) + 6
